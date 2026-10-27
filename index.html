@@ -191,6 +191,21 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
 .people td{padding:6px 10px}
 .mini{font-size:12px;color:var(--muted)}
 #scanCard .stats{margin-top:0}
+.chart-title{font-size:13px;font-weight:700;margin:18px 0 2px;color:var(--ink-2)}
+.chartwrap{overflow-x:auto;margin-top:6px}
+.chartwrap svg{display:block;width:100%;height:auto;min-width:320px}
+.chartwrap .grid{stroke:var(--line);stroke-width:1}
+.chartwrap .base{stroke:var(--line-2);stroke-width:1}
+.chartwrap .ax{fill:var(--muted);font-size:11px}
+.chartwrap .lbl{fill:var(--ink-2);font-size:12px}
+.chartwrap .val{fill:var(--ink-2);font-size:11px;font-weight:600}
+.chartwrap .bar{fill:var(--primary)}
+.chartwrap .hit{fill:transparent;cursor:default}
+.chartwrap .hit:hover{fill:var(--primary-soft);opacity:.5}
+.chartwrap .ln{stroke:var(--primary);stroke-width:2;fill:none}
+.chartwrap .dot{fill:var(--primary);stroke:var(--surface);stroke-width:2}
+.chartwrap .guide{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.tip{position:fixed;z-index:200;background:var(--ink);color:var(--surface);font-size:12px;line-height:1.4;padding:6px 9px;border-radius:8px;pointer-events:none;max-width:260px;box-shadow:var(--shadow)}
 @media (max-width:720px){.cal .d{min-height:56px;padding:3px}.cal .ev{font-size:10px;padding:1px 3px}.tabs button{font-size:10px}}
 </style>
 </head>
@@ -254,6 +269,42 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
     <div class="card">
       <h2><svg class="i"><use href="#i-cal"/></svg>Coming up</h2>
       <div id="homeSoon"></div>
+    </div>
+    <div class="card only-staff" id="kpiCard">
+      <h2><svg class="i"><use href="#i-team"/></svg>Counter productivity</h2>
+      <p class="small">From the scan times of each counter. Counting time = first to last scan minus rest; rest = every gap of more than 5 minutes between two scans.</p>
+      <div class="row"><div><label>Stock take</label><select id="kTake"></select></div></div>
+      <div class="tiles" id="kTiles" style="margin-top:12px"></div>
+      <div class="chart-title">Lines per hour by counter</div>
+      <div class="chartwrap" id="kChart"></div>
+      <details><summary class="small">Show as a table</summary>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Counter</th><th>Team</th><th class="n">Lines</th><th class="n">Units</th><th class="n">Counting time</th><th class="n">Rest</th><th class="n">Breaks</th><th class="n">Carton lines</th><th class="n">Lines / hour</th></tr></thead>
+          <tbody id="kTable"></tbody>
+        </table></div>
+      </details>
+    </div>
+    <div class="card only-staff" id="trendCard">
+      <h2><svg class="i"><use href="#i-cal"/></svg>Trend: stock take to stock take</h2>
+      <div class="row">
+        <div><label>Location</label><select id="tLoc"></select></div>
+        <div><label>Measure</label><select id="tMetric">
+          <option value="lph">Lines per hour (all counters)</option>
+          <option value="hours">Count time, first to last scan (hours)</option>
+          <option value="lines">Lines counted</option>
+          <option value="units">Units counted</option>
+          <option value="rest">Rest share of counting time (%)</option>
+          <option value="counters">Counters</option>
+        </select></div>
+      </div>
+      <div class="chart-title" id="tTitle"></div>
+      <div class="chartwrap" id="tChart"></div>
+      <details><summary class="small">Show as a table</summary>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Date</th><th>Stock take</th><th>Location</th><th class="n">Counters</th><th class="n">Lines</th><th class="n">Units</th><th class="n">Count time</th><th class="n">Rest %</th><th class="n">Lines / hour</th></tr></thead>
+          <tbody id="tTable"></tbody>
+        </table></div>
+      </details>
     </div>
     <div class="card only-staff">
       <h2><svg class="i"><use href="#i-list"/></svg>All stock takes and history</h2>
@@ -551,6 +602,8 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
   </section>
 </main>
 
+<div id="tip" class="tip hide"></div>
+
 <!-- cloud database (Supabase). If the library is missing (first open without internet) it is loaded when the phone is online -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
@@ -659,7 +712,7 @@ var D = blankData();
 var outbox = load('isc_outbox', []), failed = load('isc_outbox_failed', []), lastSync = load('isc_lastsync', '');
 var S = null, myLines = [], myUnk = [];      // current count session of this user
 var IDX = {};                                 // company -> {bc: barcode -> {it, type}, code: CODE -> item}
-function blankData(){ return {profiles:[], ops:[], locs:[], racks:[], takes:[], teams:[], members:[], cal:[], items:{CCS:[], DIS:[]}, prog:[], at:''}; }
+function blankData(){ return {profiles:[], ops:[], locs:[], racks:[], takes:[], teams:[], members:[], cal:[], items:{CCS:[], DIS:[]}, prog:[], perf:[], at:''}; }
 function uKey(k){ return 'isc3_' + k + '_' + (me ? me.id : ''); }
 function loadUserState(){
   D = Object.assign(blankData(), load(uKey('cache'), {}));
@@ -885,11 +938,12 @@ function pullAll(){
     sb.from('teams').select('stock_take_id, name, bins'),
     sb.from('stock_take_members').select('stock_take_id, user_id, role, team'),
     sb.from('v_calendar').select('*'),
-    sb.from('v_progress').select('stock_take_id, team, bin, lines, units')
+    sb.from('v_progress').select('stock_take_id, team, bin, lines, units'),
+    sb.from('v_counter_perf').select('*')
   ]).then(function(r){
     r.forEach(check);
     D.profiles = r[0].data; D.ops = r[1].data; D.locs = r[2].data; D.racks = r[3].data; D.takes = r[4].data;
-    D.teams = r[5].data; D.members = r[6].data; D.cal = r[7].data; D.prog = r[8].data;
+    D.teams = r[5].data; D.members = r[6].data; D.cal = r[7].data; D.prog = r[8].data; D.perf = r[9].data;
     return pullItems();
   }).then(function(){
     D.at = new Date().toISOString(); saveCache();
@@ -1012,7 +1066,142 @@ function renderHome(){
       return '<tr><td><b>' + esc(t.name) + '</b></td><td>' + esc(placeOf(t)) + '</td><td>' + esc(fmtDate(t.count_date)) + '</td><td>' + statusTag(t) + '</td><td class="n">' + p.lines + '</td><td class="n">' + p.units.toLocaleString() +
         '</td><td><button class="sec small" data-detail="' + esc(t.id) + '" type="button">Details</button></td></tr>';
     }).join('') || '<tr><td colspan="7" class="small">No stock takes yet.</td></tr>';
+    renderKpi(); renderTrend();
   }
+}
+
+/* =====================================================================
+   KPIs: counter productivity (one stock take) and the trend between stock takes
+   ===================================================================== */
+function perfRows(tid){
+  return D.perf.filter(function(p){ return p.stock_take_id === tid; }).map(function(p){
+    var span = +p.span_min || 0, rest = +p.rest_min || 0, work = Math.max(0, span - rest);
+    return {uid:p.user_id, name:nameOf(p.user_id) || p.counter_name || '?', team:p.team || '', lines:+p.lines, units:+p.units, span:span, rest:rest, work:work,
+      breaks:+p.breaks || 0, cartons:+p.carton_lines || 0, first:p.first_scan, last:p.last_scan, lph:work >= 1 ? p.lines / (work / 60) : null};
+  });
+}
+function takeAgg(tid){
+  var rows = perfRows(tid); if(!rows.length) return null;
+  var a = {counters:rows.length, lines:0, units:0, work:0, rest:0, span:0, breaks:0, cartons:0, first:null, last:null};
+  rows.forEach(function(r){
+    a.lines += r.lines; a.units += r.units; a.work += r.work; a.rest += r.rest; a.span += r.span; a.breaks += r.breaks; a.cartons += r.cartons;
+    if(!a.first || r.first < a.first) a.first = r.first; if(!a.last || r.last > a.last) a.last = r.last;
+  });
+  a.lph = a.work >= 1 ? a.lines / (a.work / 60) : null;
+  a.restPct = a.span > 0 ? a.rest / a.span * 100 : 0;
+  a.hours = a.first && a.last ? (new Date(a.last) - new Date(a.first)) / 3600000 : 0;
+  a.rows = rows;
+  return a;
+}
+function fmt1(v){ return v == null ? '-' : (Math.round(v * 10) / 10).toLocaleString(); }
+function renderKpi(){
+  var takes = D.takes.filter(function(t){ return D.perf.some(function(p){ return p.stock_take_id === t.id; }); })
+    .sort(function(x, y){ return x.count_date < y.count_date ? 1 : x.count_date > y.count_date ? -1 : 0; });   // latest first
+  var keep = $('kTake').value;
+  $('kTake').innerHTML = takes.map(function(t){ return '<option value="' + esc(t.id) + '">' + esc(fmtDate(t.count_date) + ' · ' + t.name + ' · ' + placeOf(t)) + '</option>'; }).join('') || '<option value="">No scans yet</option>';
+  if(keep && takes.some(function(t){ return t.id === keep; })) $('kTake').value = keep;
+  var a = takeAgg($('kTake').value);
+  if(!a){
+    $('kTiles').innerHTML = ''; $('kTable').innerHTML = '';
+    $('kChart').innerHTML = '<p class="small">Counter productivity shows here once counters have scanned in a stock take' + (online() ? '.' : ' (needs one online sync).') + '</p>';
+    return;
+  }
+  var ranked = a.rows.filter(function(r){ return r.lph != null; }).sort(function(x, y){ return y.lph - x.lph; });
+  var top = ranked[0], low = ranked.length > 1 ? ranked[ranked.length - 1] : null;
+  var tiles = [
+    [a.counters, 'Counters'],
+    [fmt1(a.lph), 'Lines per hour (all)'],
+    [a.hours ? mins(a.hours * 60) : '-', 'Count time (first to last scan)'],
+    [fmt1(a.restPct) + '%', 'Rest share (' + mins(a.rest) + ', ' + a.breaks + ' breaks)'],
+    [a.lines ? Math.round(a.cartons / a.lines * 100) + '%' : '-', 'Lines counted as cartons'],
+    [top ? fmt1(top.lph) : '-', 'Fastest: ' + (top ? top.name : '-')],
+    [low ? fmt1(low.lph) : '-', 'Slowest: ' + (low ? low.name : '-')]
+  ];
+  $('kTiles').innerHTML = tiles.map(function(x){ return '<div class="tile"><b>' + esc(x[0]) + '</b><span>' + esc(x[1]) + '</span></div>'; }).join('');
+  var bars = a.rows.slice().sort(function(x, y){ return (y.lph || 0) - (x.lph || 0); });
+  $('kChart').innerHTML = barChart(bars.map(function(r){
+    return {label:r.name, value:r.lph || 0, text:r.lph == null ? 'too short' : fmt1(r.lph),
+      tip:r.name + (r.team ? ' · ' + r.team : '') + '\n' + r.lines + ' lines · ' + r.units.toLocaleString() + ' units\nCounting ' + mins(r.work) + ' · rest ' + mins(r.rest) + ' (' + r.breaks + ' breaks)\n' + (r.lph == null ? 'Less than 1 minute of counting' : fmt1(r.lph) + ' lines per hour')};
+  }));
+  $('kTable').innerHTML = bars.map(function(r){
+    return '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.team) + '</td><td class="n">' + r.lines + '</td><td class="n">' + r.units.toLocaleString() + '</td><td class="n">' + mins(r.work) + '</td><td class="n">' + mins(r.rest) + '</td><td class="n">' + r.breaks + '</td><td class="n">' + r.cartons + '</td><td class="n">' + fmt1(r.lph) + '</td></tr>';
+  }).join('');
+}
+var METRIC = {
+  lph:['Lines per hour (all counters)', function(a){ return a.lph; }, fmt1],
+  hours:['Count time, first to last scan (hours)', function(a){ return a.hours; }, fmt1],
+  lines:['Lines counted', function(a){ return a.lines; }, function(v){ return Math.round(v).toLocaleString(); }],
+  units:['Units counted', function(a){ return a.units; }, function(v){ return Math.round(v).toLocaleString(); }],
+  rest:['Rest share of counting time (%)', function(a){ return a.restPct; }, function(v){ return fmt1(v) + '%'; }],
+  counters:['Counters', function(a){ return a.counters; }, function(v){ return String(Math.round(v)); }]
+};
+function renderTrend(){
+  var withData = D.takes.filter(function(t){ return t.status !== 'cancelled' && D.perf.some(function(p){ return p.stock_take_id === t.id; }); });
+  var locIds = []; withData.forEach(function(t){ if(t.location_id && locIds.indexOf(t.location_id) < 0) locIds.push(t.location_id); });
+  var keep = $('tLoc').value;
+  $('tLoc').innerHTML = '<option value="">All locations</option>' + locIds.map(function(id){ var l = locById(id), o = l ? opById(l.operation_id) : null; return '<option value="' + id + '">' + esc((o ? o.code + ' · ' : '') + (l ? l.name : id)) + '</option>'; }).join('');
+  if(keep && locIds.indexOf(+keep) >= 0) $('tLoc').value = keep;
+  var loc = +$('tLoc').value || 0, m = METRIC[$('tMetric').value];
+  var pts = withData.filter(function(t){ return !loc || t.location_id === loc; })
+    .sort(function(x, y){ return x.count_date < y.count_date ? -1 : x.count_date > y.count_date ? 1 : 0; })
+    .map(function(t){ var a = takeAgg(t.id); return {t:t, a:a, v:m[1](a)}; }).filter(function(p){ return p.v != null; });
+  $('tTitle').textContent = m[0] + (loc ? '' : ' · all locations');
+  $('tChart').innerHTML = pts.length >= 2 ? lineChart(pts.map(function(p){
+    return {label:fmtDate(p.t.count_date).slice(0, 6), value:p.v, text:m[2](p.v),
+      tip:p.t.name + '\n' + placeOf(p.t) + ' · ' + fmtDate(p.t.count_date) + '\n' + m[0] + ': ' + m[2](p.v)};
+  })) : '<p class="small">The trend shows when two or more stock takes' + (loc ? ' at this location' : '') + ' have scans. ' + (pts.length ? 'So far: ' + pts.length + '.' : '') + '</p>';
+  $('tTable').innerHTML = pts.slice().reverse().map(function(p){
+    var a = p.a;
+    return '<tr><td>' + esc(fmtDate(p.t.count_date)) + '</td><td>' + esc(p.t.name) + '</td><td>' + esc(placeOf(p.t)) + '</td><td class="n">' + a.counters + '</td><td class="n">' + a.lines + '</td><td class="n">' + a.units.toLocaleString() +
+      '</td><td class="n">' + (a.hours ? mins(a.hours * 60) : '-') + '</td><td class="n">' + fmt1(a.restPct) + '%</td><td class="n">' + fmt1(a.lph) + '</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="small">No stock takes with scans yet.</td></tr>';
+}
+
+/* small SVG charts: one series, colours from the page tokens, hover tooltip on every mark */
+function niceMax(v){ if(!(v > 0)) return 1; var p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
+function barChart(d){   // horizontal bars, label on the left, value at the bar end
+  var W = 640, L = 150, R = 56, rowH = 30, top = 8, H = top + d.length * rowH + 22, max = niceMax(Math.max.apply(null, d.map(function(x){ return x.value; })));
+  var sx = function(v){ return L + (W - L - R) * v / max; }, out = [];
+  for(var g = 0; g <= 4; g++){ var gx = L + (W - L - R) * g / 4; out.push('<line class="grid" x1="' + gx + '" x2="' + gx + '" y1="' + top + '" y2="' + (H - 22) + '"/><text class="ax" x="' + gx + '" y="' + (H - 6) + '" text-anchor="middle">' + fmt1(max * g / 4) + '</text>'); }
+  d.forEach(function(x, i){
+    var y = top + i * rowH, bh = 16, by = y + (rowH - bh) / 2, w = Math.max(0, sx(x.value) - L), r = Math.min(4, w / 2, bh / 2);
+    var path = w > 0 ? 'M' + L + ' ' + by + 'h' + (w - r) + 'a' + r + ' ' + r + ' 0 0 1 ' + r + ' ' + r + 'v' + (bh - 2 * r) + 'a' + r + ' ' + r + ' 0 0 1 -' + r + ' ' + r + 'h-' + (w - r) + 'z' : '';
+    var name = x.label.length > 20 ? x.label.slice(0, 19) + '…' : x.label;
+    out.push('<rect class="hit" x="0" y="' + y + '" width="' + W + '" height="' + rowH + '" data-tip="' + esc(x.tip) + '"/>' +
+      '<text class="lbl" x="' + (L - 8) + '" y="' + (y + rowH / 2 + 4) + '" text-anchor="end" pointer-events="none">' + esc(name) + '</text>' +
+      (path ? '<path class="bar" d="' + path + '" pointer-events="none"/>' : '') +
+      '<text class="val" x="' + (L + w + 6) + '" y="' + (y + rowH / 2 + 4) + '" pointer-events="none">' + esc(x.text) + '</text>');
+  });
+  out.push('<line class="base" x1="' + L + '" x2="' + L + '" y1="' + top + '" y2="' + (H - 22) + '"/>');
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Lines per hour by counter">' + out.join('') + '</svg>';
+}
+function lineChart(d){
+  var W = 640, H = 230, L = 48, R = 20, T = 14, B = 34, max = niceMax(Math.max.apply(null, d.map(function(x){ return x.value; })) * 1.1);
+  var step = d.length > 1 ? (W - L - R) / (d.length - 1) : 0, sx = function(i){ return L + step * i; }, sy = function(v){ return T + (H - T - B) * (1 - v / max); };
+  var out = [], every = Math.ceil(d.length / 8);
+  for(var g = 0; g <= 4; g++){ var gy = T + (H - T - B) * g / 4; out.push('<line class="grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + gy + '" y2="' + gy + '"/><text class="ax" x="' + (L - 6) + '" y="' + (gy + 4) + '" text-anchor="end">' + fmt1(max * (1 - g / 4)) + '</text>'); }
+  out.push('<line class="base" x1="' + L + '" x2="' + (W - R) + '" y1="' + (H - B) + '" y2="' + (H - B) + '"/>');
+  out.push('<line class="guide hide" id="tGuide" y1="' + T + '" y2="' + (H - B) + '"/>');
+  out.push('<path class="ln" d="' + d.map(function(x, i){ return (i ? 'L' : 'M') + sx(i) + ' ' + sy(x.value); }).join('') + '"/>');
+  d.forEach(function(x, i){
+    if(i % every === 0 || i === d.length - 1) out.push('<text class="ax" x="' + sx(i) + '" y="' + (H - 12) + '" text-anchor="middle">' + esc(x.label) + '</text>');
+    out.push('<circle class="dot" cx="' + sx(i) + '" cy="' + sy(x.value) + '" r="4" pointer-events="none"/>');
+  });
+  out.push('<text class="val" x="' + sx(d.length - 1) + '" y="' + (sy(d[d.length - 1].value) - 10) + '" text-anchor="end">' + esc(d[d.length - 1].text) + '</text>');   // label the latest point only
+  d.forEach(function(x, i){ var hw = Math.max(step / 2, 12); out.push('<rect class="hit" x="' + (sx(i) - hw) + '" y="' + T + '" width="' + hw * 2 + '" height="' + (H - T - B) + '" data-tip="' + esc(x.tip) + '" data-gx="' + sx(i) + '"/>'); });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Trend">' + out.join('') + '</svg>';
+}
+function showTip(e){
+  var t = e.target.closest ? e.target.closest('[data-tip]') : null, tip = $('tip');
+  if(!t){ tip.classList.add('hide'); var g0 = $('tGuide'); if(g0) g0.classList.add('hide'); return; }
+  tip.textContent = ''; t.getAttribute('data-tip').split('\n').forEach(function(line, i){ if(i) tip.appendChild(document.createElement('br')); tip.appendChild(document.createTextNode(line)); });
+  tip.classList.remove('hide');
+  var p = e.touches && e.touches[0] ? e.touches[0] : e;
+  var x = p.clientX + 14, y = p.clientY + 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  if(x + w > innerWidth - 8) x = p.clientX - w - 14; if(y + h > innerHeight - 8) y = p.clientY - h - 14;
+  tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  var gx = t.getAttribute('data-gx'), g = $('tGuide');
+  if(g){ if(gx){ g.setAttribute('x1', gx); g.setAttribute('x2', gx); g.classList.remove('hide'); } else g.classList.add('hide'); }
 }
 
 /* =====================================================================
@@ -1645,6 +1834,13 @@ $('hdrSync').onclick = function(){
   syncNow().then(pullAll);
 };
 
+/* KPIs */
+$('kTake').onchange = renderKpi;
+$('tLoc').onchange = renderTrend;
+$('tMetric').onchange = renderTrend;
+document.addEventListener('mousemove', showTip);
+document.addEventListener('touchstart', showTip, {passive:true});
+
 /* stock takes */
 $('tlFilter').onchange = renderTakesPage;
 $('btnNewTake').onclick = function(){ openEditor(null); };
@@ -1794,5 +1990,5 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(function(){});
 }
 </script>
-<!-- web build 20261027-2111 --></body>
+<!-- web build 20261027-2142 --></body>
 </html>
