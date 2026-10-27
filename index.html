@@ -1,0 +1,1406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iceman Stock Counting System</title>
+<meta name="theme-color" content="#1d1f63">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+/* ---------- design tokens ---------- */
+:root{
+  --bg:#f3f5f9; --surface:#ffffff; --surface-2:#f7f9fc; --ink:#0f1b2d; --ink-2:#334155; --muted:#64748b;
+  --line:#e2e8f0; --line-2:#cbd5e1;
+  --primary:#2e3192; --primary-ink:#ffffff; --primary-soft:#e9e9f7;
+  --scan:#e8590c; --scan-soft:#fff1e8;
+  --ok:#0f7a55; --ok-soft:#e5f6ef; --warn:#b45309; --warn-soft:#fdf3e2; --danger:#b42318; --danger-soft:#fdecea;
+  --head:#1d1f63; --head-ink:#eef0ff; --head-chip:#2a2d7d;
+  --radius:14px; --radius-sm:10px; --shadow:0 1px 2px rgba(15,27,45,.06),0 4px 14px rgba(15,27,45,.06);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0b1220; --surface:#121b2b; --surface-2:#0f1726; --ink:#e6edf7; --ink-2:#c3cfdf; --muted:#8b9bb2;
+    --line:#22314a; --line-2:#2e4060;
+    --primary:#8e92f2; --primary-ink:#0b0d2e; --primary-soft:#1f2257;
+    --scan:#ff8a3d; --scan-soft:#2a1a10;
+    --ok:#34c391; --ok-soft:#0f2a22; --warn:#f0a94a; --warn-soft:#2b210f; --danger:#f17066; --danger-soft:#2c1414;
+    --head:#0d0e33; --head-ink:#e6e8ff; --head-chip:#1c1f55;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Segoe UI",system-ui,-apple-system,Roboto,"Noto Sans Sinhala",Arial,sans-serif;font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
+svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- app bar ---------- */
+header{background:var(--head);color:var(--head-ink);padding:12px max(16px,env(safe-area-inset-left));display:flex;gap:12px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+.brand{display:flex;align-items:center;gap:10px;flex:1;min-width:200px}
+.brand .mark{width:42px;height:42px;border-radius:10px;background:#fff;display:grid;place-items:center;padding:4px;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.brand .mark img{max-width:100%;max-height:100%;display:block}
+header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px}
+header .sub{font-size:12px;opacity:.7;margin-top:1px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+header .pill{background:var(--head-chip);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:5px 11px;font-size:12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis}
+header .pill::before{content:"";width:7px;height:7px;border-radius:50%;background:#7c8aa0;flex:none}
+#hdrProject::before{background:#9fa3ff}
+#hdrSession::before{background:#34c391}
+#hdrMaster::before{background:#f0a94a}
+#hdrSync{cursor:pointer}
+#hdrSync.on::before{background:#34c391}
+#hdrSync.wait::before{background:#f0a94a}
+#hdrSync.bad::before{background:#f17066}
+
+/* ---------- navigation ---------- */
+.tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;box-shadow:var(--shadow)}
+.tabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;color:var(--ink-2);border-radius:9px;padding:10px 12px;font-weight:600;font-size:14px;min-height:44px}
+.tabs button:hover{background:var(--surface-2)}
+.tabs button.on{background:var(--primary);color:var(--primary-ink)}
+.tabs .num{display:none}
+@media (max-width:720px){
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;border-radius:0;border-width:1px 0 0;padding:6px max(6px,env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom));gap:2px}
+  .tabs button{flex-direction:column;gap:3px;font-size:11px;padding:6px 4px;min-height:54px}
+  .tabs button svg.i{width:20px;height:20px}
+  main{padding-bottom:96px !important}
+}
+
+/* ---------- layout ---------- */
+main{max-width:1040px;margin:0 auto;padding:18px max(16px,env(safe-area-inset-left));display:grid;gap:16px}
+section{display:grid;gap:16px;min-width:0}
+main > *, section > *, .row > *{min-width:0}
+html,body{overflow-x:hidden}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);min-width:0}
+.card h2{font-size:15px;margin:0 0 4px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card h2 svg.i{color:var(--primary)}
+.card > p.small:first-of-type{margin-top:2px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+
+/* ---------- form ---------- */
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:10px 0 6px;letter-spacing:.2px}
+input,select,button,textarea{font:inherit}
+input[type=text],input[type=password],input[type=number],input[type=date],select,textarea{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line-2);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+input:disabled,select:disabled{background:var(--surface-2);color:var(--muted)}
+input[type=file]{font-size:13px;color:var(--ink-2)}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--primary)}
+
+/* ---------- buttons ---------- */
+button{border:1px solid transparent;border-radius:var(--radius-sm);padding:10px 16px;min-height:44px;cursor:pointer;background:var(--primary);color:var(--primary-ink);font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:filter .15s,background .15s}
+button:hover{filter:brightness(1.06)}
+button.sec{background:var(--surface);color:var(--ink);border-color:var(--line-2)}
+button.sec:hover{background:var(--surface-2);filter:none}
+button.acc{background:var(--scan);color:#fff}
+button.danger{background:var(--surface);color:var(--danger);border-color:var(--danger)}
+button.danger:hover{background:var(--danger-soft);filter:none}
+button.small{padding:6px 10px;min-height:34px;font-size:13px}
+button:disabled{opacity:.5;cursor:default}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center}
+
+/* ---------- scan ---------- */
+.scanbox{position:relative}
+.scanbox svg.i{position:absolute;left:16px;top:50%;transform:translateY(-50%);width:24px;height:24px;color:var(--scan)}
+#scan{font-size:20px;min-height:60px;padding:14px 16px 14px 52px;border:2px solid var(--scan);border-radius:12px;background:var(--scan-soft);font-weight:600;letter-spacing:.5px}
+#scan:focus{box-shadow:0 0 0 4px rgba(232,89,12,.18)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.stat{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat b{display:block;font-size:20px;line-height:1.2}
+.stat span{font-size:12px;color:var(--muted)}
+
+/* ---------- messages / panels ---------- */
+.msg{margin-top:12px;padding:11px 14px;border-radius:var(--radius-sm);font-size:14px;border:1px solid transparent;display:flex;gap:8px;align-items:flex-start}
+.msg::before{font-weight:800}
+.msg.ok{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 25%,transparent)}
+.msg.ok::before{content:"✓"}
+.msg.bad{background:var(--warn-soft);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 25%,transparent)}
+.msg.bad::before{content:"!"}
+.entry{display:none;border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:var(--radius);padding:16px;margin-top:14px;background:var(--surface-2);box-shadow:var(--shadow)}
+#linkBox{border-left-color:var(--scan)}
+.entry b{font-size:16px}
+details summary{cursor:pointer;margin-top:4px}
+
+/* ---------- tables ---------- */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px;background:var(--surface-2);position:sticky;top:0}
+tbody tr:hover td{background:var(--surface-2)}
+tbody tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td input[type=text]{min-height:36px;padding:6px 10px}
+td select{min-height:36px;padding:6px 8px}
+
+/* ---------- misc ---------- */
+video{width:100%;max-height:320px;background:#000;border-radius:12px;display:none;margin-top:12px}
+.small{font-size:13px;color:var(--muted)}
+.hide{display:none !important}
+.proj{background:var(--primary-soft);border:1px solid color-mix(in srgb,var(--primary) 25%,transparent);border-radius:12px;padding:12px 14px;font-size:14px;color:var(--primary);margin:8px 0 4px}
+.tag{display:inline-block;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2);border-radius:999px;padding:2px 9px;font-size:12px;margin:2px 3px 0 0}
+#copyBox{font-family:Consolas,monospace;font-size:12px}
+
+/* ---------- sign-in ---------- */
+.login{position:fixed;inset:0;z-index:100;background:linear-gradient(160deg,#1d1f63 0%,#2e3192 60%,#3a3fb0 100%);display:grid;place-items:center;padding:16px;overflow:auto}
+.login-card{background:var(--surface);color:var(--ink);border-radius:18px;max-width:400px;width:100%;padding:28px 26px;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.login-head{text-align:center;margin-bottom:6px}
+.login-head img{height:96px;display:block;margin:0 auto 10px}
+.login-head h1{font-size:19px;margin:0}
+.login-head .small{margin-top:4px}
+.login-card button{width:100%;margin-top:16px}
+.login-alt{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.login-foot{color:#d6d8ff;font-size:12px;text-align:center;margin-top:14px}
+header .who{display:flex;align-items:center;gap:6px}
+header button.small{background:transparent;color:var(--head-ink);border:1px solid rgba(255,255,255,.25);min-height:30px}
+body.role-counter .need-lead{display:none !important}
+body:not(.role-admin) .need-admin{display:none !important}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16 8v8"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></symbol>
+  <symbol id="i-team" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></symbol>
+</svg>
+<header>
+  <div class="brand">
+    <div class="mark"><img src="data:image/png;base64,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" alt="Iceman"></div>
+    <div><h1>Iceman Stock Counting System</h1><div class="sub">Barcode stock taking · works offline</div></div>
+  </div>
+  <div class="chips">
+    <span class="pill" id="hdrProject">Quick count</span>
+    <span class="pill" id="hdrSession">No count started</span>
+    <span class="pill" id="hdrMaster">Item master: 0</span>
+    <span class="pill" id="hdrSync">Device only</span>
+  </div>
+  <div class="who">
+    <span class="pill" id="hdrUser"></span>
+    <button class="small" id="btnLogout" type="button">Log out</button>
+  </div>
+</header>
+
+<!-- SIGN-IN -->
+<div id="loginScreen" class="login hide">
+  <div>
+    <div class="login-card">
+      <div class="login-head">
+        <img id="loginLogo" alt="Iceman">
+        <h1>Iceman Stock Counting System</h1>
+        <div class="small" id="loginHint">Sign in to continue</div>
+      </div>
+      <form id="loginForm" autocomplete="on">
+        <label for="lUser">Username</label><input type="text" id="lUser" autocomplete="username" autocapitalize="none">
+        <label for="lPass">Password</label><input type="password" id="lPass" autocomplete="current-password">
+        <button type="submit">Sign in</button>
+      </form>
+      <form id="setupForm" class="hide" autocomplete="off">
+        <div class="small">No users on this device yet. Create the first <b>Admin</b> account (the count lead), or load a plan file from the count lead below.</div>
+        <label for="aName">Full name</label><input type="text" id="aName">
+        <label for="aUser">Username</label><input type="text" id="aUser" autocapitalize="none">
+        <label for="aPass">Password (at least 6 characters)</label><input type="password" id="aPass" autocomplete="new-password">
+        <label for="aPass2">Confirm password</label><input type="password" id="aPass2" autocomplete="new-password">
+        <button type="submit">Create admin and sign in</button>
+      </form>
+      <div id="loginMsg"></div>
+      <div class="login-alt">
+        <label for="loginPlan">New device? Load the plan file from the count lead (it carries the user accounts)</label>
+        <input type="file" id="loginPlan" accept=".json,application/json">
+      </div>
+    </div>
+    <div class="login-foot">Accounts are kept on this device. Ask the count lead if you cannot sign in.</div>
+  </div>
+</div>
+<main>
+  <nav class="tabs">
+    <button data-tab="takes"><svg class="i"><use href="#i-team"/></svg>Stock takes</button>
+    <button data-tab="count" class="on"><svg class="i"><use href="#i-scan"/></svg>Count</button>
+    <button data-tab="lines"><svg class="i"><use href="#i-list"/></svg>Counted lines</button>
+    <button data-tab="setup"><svg class="i"><use href="#i-gear"/></svg>Setup</button>
+  </nav>
+
+  <!-- STOCK TAKES (projects) -->
+  <section id="tab-takes" class="hide">
+    <div class="card">
+      <h2><svg class="i"><use href="#i-box"/></svg>Stock takes on this device</h2>
+      <p class="small">Each stock take keeps its own counted lines, teams and racks, apart from the others. Open the one you are counting for.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Stock take</th><th>Company / location</th><th>Date</th><th>Teams</th><th class="n">Lines here</th><th></th></tr></thead>
+        <tbody id="takeBody"></tbody>
+      </table></div>
+      <div class="btns">
+        <button class="sec" id="btnQuick">Use quick count (no stock take)</button>
+        <label class="small" style="margin:0;display:flex;align-items:center;gap:8px">Load a plan file from the count lead: <input type="file" id="filePlan" accept=".json,application/json"></label>
+      </div>
+      <div id="takeMsg"></div>
+    </div>
+
+    <div class="card need-lead hide" id="progressCard">
+      <h2><svg class="i"><use href="#i-list"/></svg>Live progress <span class="small" id="progTitle"></span></h2>
+      <p class="small">Lines and units counted so far, by team and rack (all phones that are online). Updates by itself.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Team</th><th>Rack / bin</th><th class="n">Lines</th><th class="n">Units</th><th class="n">Counters</th><th>Last scan</th></tr></thead>
+        <tbody id="progBody"></tbody>
+      </table></div>
+      <div class="btns"><button class="sec small" id="btnProg" type="button">Refresh</button><button class="small" id="btnCloudLines" type="button">Download all counted lines (CSV)</button><button class="sec small" id="btnCloseTake" type="button">Close this stock take</button></div>
+      <p class="small">The downloaded file holds every phone's lines for this stock take. Put only this file in <b>Count Files</b> for New-StockCountReport (not the phones' own files too, or lines count twice).</p>
+    </div>
+
+    <div class="card need-lead">
+      <h2><svg class="i"><use href="#i-team"/></svg>New stock take (count lead)</h2>
+      <div class="row">
+        <div><label>Stock take name</label><input type="text" id="pName" placeholder="e.g. October 2026 month-end"></div>
+        <div><label>Company</label><select id="pCompany"><option>CCS</option><option>DIS</option></select></div>
+        <div><label>Location (as in C40)</label><input type="text" id="pLocation" placeholder="e.g. MAIN STORE"></div>
+        <div><label>Count date</label><input type="date" id="pDate"></div>
+      </div>
+      <h2 style="margin-top:16px">Teams</h2>
+      <p class="small">One row per team: the people in it and the racks / bins / lorries it counts (separate with commas).</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th style="width:20%">Team</th><th style="width:38%">Members</th><th>Racks / bins</th><th></th></tr></thead>
+        <tbody id="teamBody"></tbody>
+      </table></div>
+      <div class="btns">
+        <button class="sec small" id="btnAddTeam">+ Add team</button>
+      </div>
+      <div class="btns">
+        <button class="acc" id="btnSaveTake">Save stock take</button>
+        <button class="sec" id="btnClearTake">Clear form</button>
+      </div>
+      <p class="small">After saving, use <b>Export plan</b> in the list above and send that file to every counter. The plan file carries the teams, the racks and the item master (with the barcodes linked so far).</p>
+    </div>
+  </section>
+
+  <!-- COUNT -->
+  <section id="tab-count">
+    <div class="card" id="startCard">
+      <h2><svg class="i"><use href="#i-play"/></svg>Start a count</h2>
+      <div id="startProject"></div>
+      <div class="row">
+        <div id="teamWrap" class="hide"><label>Team</label><select id="sTeam"></select></div>
+        <div><label>Counter name</label><input type="text" id="sCounter" list="memberList" autocomplete="off"><datalist id="memberList"></datalist></div>
+        <div><label>Location (store / cold room / lorry)</label><input type="text" id="sLocation" placeholder="e.g. MAIN STORE"></div>
+        <div><label>Company</label><select id="sCompany"><option>CCS</option><option>DIS</option></select></div>
+        <div><label>Count date</label><input type="date" id="sDate"></div>
+      </div>
+      <div class="btns"><button class="acc" id="btnStart">Start count</button></div>
+      <p class="small">The count is blind: system (C40) quantities are never shown here. Everything is saved on this device, so the count keeps working without Wi-Fi.</p>
+    </div>
+
+    <div class="card hide" id="scanCard">
+      <h2><svg class="i"><use href="#i-scan"/></svg>Scan</h2>
+      <div class="stats" style="margin-top:10px">
+        <div class="stat"><b id="stLines">0</b><span>Lines counted</span></div>
+        <div class="stat"><b id="stUnits">0</b><span>Units counted</span></div>
+        <div class="stat"><b id="stUnknown">0</b><span>Unknown barcodes</span></div>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <div><label>Rack / bin now counting</label><input type="text" id="bin" list="binList" placeholder="e.g. CR1-R03" autocomplete="off"><datalist id="binList"></datalist></div>
+      </div>
+      <div id="binTags" class="small" style="margin:-4px 0 10px"></div>
+      <div class="scanbox"><svg class="i"><use href="#i-scan"/></svg><input type="text" id="scan" placeholder="Scan or type item code" autocomplete="off"></div>
+      <div class="btns">
+        <button class="sec" id="btnCam">Use phone camera</button>
+        <label class="small" style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="quick"> Quick mode (each scan adds 1, no quantity box)</label>
+      </div>
+      <video id="cam" playsinline muted></video>
+      <div id="scanMsg"></div>
+      <div class="entry" id="entry">
+        <b id="eName"></b><div class="small" id="eInfo"></div>
+        <div class="row">
+          <div><label>Cartons</label><input type="number" id="eCartons" min="0" step="1"></div>
+          <div><label>Loose units</label><input type="number" id="eLoose" min="0" step="1"></div>
+          <div><label>Expiry date (if printed)</label><input type="date" id="eExpiry"></div>
+          <div><label>Lot / batch (if printed)</label><input type="text" id="eLot"></div>
+        </div>
+        <div class="btns"><button class="acc" id="btnAdd">Add (Enter)</button><button class="sec" id="btnCancel">Cancel (Esc)</button></div>
+      </div>
+      <div class="entry" id="linkBox" style="border-color:var(--accent)">
+        <b>New barcode: <span id="lkCode"></span></b>
+        <div class="small">This barcode is not in the item master yet. Pick the item it belongs to (once), then count it.</div>
+        <div class="row">
+          <div><label>This barcode is on the</label><select id="lkType"><option value="U">Unit (single product)</option><option value="C">Carton</option></select></div>
+          <div><label>Find the item (code or name)</label><input type="text" id="lkSearch" placeholder="e.g. A41000 or Wonderbar" autocomplete="off"></div>
+        </div>
+        <div id="lkRes"></div>
+        <details style="margin-top:10px"><summary class="small">Item not in the list? Add it as a new item</summary>
+          <div class="row">
+            <div><label>Item code</label><input type="text" id="nCode" placeholder="C40 code if known"></div>
+            <div><label>Description</label><input type="text" id="nDesc"></div>
+            <div><label>Units per carton</label><input type="number" id="nUpc" min="0" step="1"></div>
+          </div>
+          <div class="btns"><button class="sec" id="btnNewItem">Add new item and count</button></div>
+        </details>
+        <div class="btns"><button class="sec" id="btnSkipLink">Skip, keep in unknown list (Esc)</button></div>
+      </div>
+      <label style="margin-top:16px">No barcode on the item? Search by code or name</label>
+      <input type="text" id="search" placeholder="e.g. 093N or YOGHURT">
+      <div id="searchRes"></div>
+    </div>
+  </section>
+
+  <!-- LINES -->
+  <section id="tab-lines" class="hide">
+    <div class="card">
+      <h2><svg class="i"><use href="#i-list"/></svg>Counted lines <span class="small" id="lineCount"></span></h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Item</th><th>Description</th><th class="n">Cartons</th><th class="n">Loose</th><th class="n">Total units</th><th>Expiry</th><th>Lot</th><th>Bin</th><th>Time</th><th></th></tr></thead>
+        <tbody id="lineBody"></tbody>
+      </table></div>
+      <h2 style="margin-top:20px">Unknown barcodes <span class="small" id="unkCount"></span></h2>
+      <p class="small">Barcodes not in the item master. Link each one to an item so the next scan works, then export the item master from Setup.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Barcode</th><th>Time</th><th>Link to item code</th><th>Type</th><th></th></tr></thead>
+        <tbody id="unkBody"></tbody>
+      </table></div>
+      <div class="btns">
+        <button class="acc" id="btnExport">Export count file (CSV)</button>
+        <button class="sec" id="btnCopy">Copy CSV</button>
+        <button class="danger" id="btnFinish">Finish and clear count</button>
+      </div>
+      <textarea id="copyBox" class="hide" style="width:100%;height:120px;margin-top:8px"></textarea>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section id="tab-setup" class="hide">
+    <div class="card">
+      <h2><svg class="i"><use href="#i-gear"/></svg>Item master</h2>
+      <p class="small">CSV columns: ItemCode, Description, UnitBarcode, CartonBarcode, UnitsPerCarton, C40UOM (UNIT or CARTON). An item with more than one barcode: separate them with | (e.g. 4791234567890|4799876543210). Item codes and descriptions come from the C40 stock export; barcodes are read from the packs once.</p>
+      <input type="file" id="fileMaster" accept=".csv,text/csv">
+      <div class="btns"><button class="sec" id="btnExportMaster">Export item master (with linked barcodes)</button></div>
+      <div id="masterMsg"></div>
+    </div>
+    <div class="card need-lead hide" id="cloudCard">
+      <h2><svg class="i"><use href="#i-box"/></svg>Cloud database</h2>
+      <p class="small">Send the item master loaded on this device to the database, so every phone gets the same items and barcodes after sign-in.</p>
+      <div class="row">
+        <div><label>Company of this item master</label><select id="cCompany"><option>DIS</option><option>CCS</option></select></div>
+      </div>
+      <div class="btns"><button id="btnPushItems" type="button">Upload item master to the cloud</button><button class="sec" id="btnPullItems" type="button">Download items from the cloud</button><button class="sec" id="btnSyncNow" type="button">Sync now</button></div>
+      <div id="cloudMsg"></div>
+    </div>
+    <div class="card need-admin" id="usersCard">
+      <h2><svg class="i"><use href="#i-team"/></svg>Users and access</h2>
+      <p class="small">Admin: everything, including users. Count lead: stock takes, plans, counting. Counter: counting only. To change a password, add the same username again.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr></thead>
+        <tbody id="userBody"></tbody>
+      </table></div>
+      <div class="row">
+        <div><label>Full name</label><input type="text" id="uName"></div>
+        <div><label>Username</label><input type="text" id="uUser" autocapitalize="none" autocomplete="off"></div>
+        <div><label>Role</label><select id="uRole"><option value="counter">Counter</option><option value="lead">Count lead</option><option value="admin">Admin</option></select></div>
+        <div><label>Password</label><input type="password" id="uPass" autocomplete="new-password"></div>
+      </div>
+      <div class="btns"><button id="btnAddUser" type="button">Add / update user</button></div>
+      <div id="userMsg"></div>
+      <p class="small">Plan files carry the user list (passwords are stored only as hashes), so counters can sign in on their own phones.</p>
+    </div>
+    <div class="card">
+      <h2>Camera check</h2>
+      <p class="small" id="camSupport"></p>
+    </div>
+  </section>
+</main>
+
+<!-- cloud database (Supabase). Without internet at first load the app runs in device-only mode -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+window.ISC_CLOUD = {
+  url: 'https://abuofygxnxgmevguonct.supabase.co',
+  // public "anon" key: safe in the browser, access is limited by the database's Row Level Security
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFidW9meWd4bnhnbWV2Z3VvbmN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMwODk0MjcsImV4cCI6MjEwODY2NTQyN30.7eUsBHxylOU6-tvKHaTxhKE1vbk_3UNCcyqVxy2gkaI',
+  domain: 'iceman-stock.local'
+};
+</script>
+<script id="seed">/*SEED*/</script>
+<script>
+(function(){
+'use strict';
+function load(k, d){ try{ var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } }
+function save(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ alertMsg('scanMsg','Could not save on this device: '+e.message,false); } }
+
+// item master is shared by all stock takes on the device; lines / unknown / session are kept per stock take
+var K = {master:'isc_master'};
+var master = load(K.master, []);
+var projects = load('isc_projects', []), activePid = load('isc_active', '');
+var session = null, lines = [], unknown = [];
+function keysFor(pid){
+  var p = pid ? 'isc_p_' + pid + '_' : 'isc_';
+  K.session = p + 'session'; K.lines = p + 'lines'; K.unk = p + 'unknown';
+}
+function project(){ return projects.filter(function(p){ return p.id === activePid; })[0] || null; }
+function useProject(pid){
+  if(pid && !projects.some(function(p){ return p.id === pid; })) pid = '';
+  activePid = pid || ''; save('isc_active', activePid); keysFor(activePid);
+  session = load(K.session, null); lines = load(K.lines, []); unknown = load(K.unk, []);
+}
+
+// merge a list of items into the master, keeping barcodes already linked on this device
+function mergeItems(items){
+  var old = {}; master.forEach(function(it){ old[it.code.toUpperCase()] = it; });
+  var seen = {};
+  var merged = items.map(function(s){
+    var it = {code:s.code, desc:s.desc, bu:s.bu||'', bc:s.bc||'', upc:s.upc||0, uom:s.uom||'UNIT'}, o = old[s.code.toUpperCase()];
+    seen[s.code.toUpperCase()] = 1;
+    if(o){ ['bu','bc'].forEach(function(f){ String(o[f]||'').split('|').forEach(function(b){ b = b.trim();
+      if(b && String(it[f]).split('|').indexOf(b) < 0) it[f] = it[f] ? it[f] + '|' + b : b; }); }); if(!it.upc && o.upc) it.upc = o.upc; }
+    return it;
+  });
+  master.forEach(function(it){ if(!seen[it.code.toUpperCase()]) merged.push(it); });   // keep items added on this device
+  master = merged; save(K.master, master);
+}
+// a built copy carries its item master (window.SEED); load it once per build
+var SEED = window.SEED || null;
+if(SEED && SEED.items && load('isc_seedver', '') !== SEED.version){ mergeItems(SEED.items); save('isc_seedver', SEED.version); }
+useProject(activePid);
+
+var byBarcode = {}, byCode = {}, current = null;
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function norm(s){ return String(s||'').trim(); }
+function nowTime(){ var d=new Date(); return d.toTimeString().slice(0,8); }
+function splitList(s){ return String(s||'').split(',').map(norm).filter(Boolean); }
+function safeName(s){ return String(s).replace(/[\\\/:*?"<>|]/g,'-'); }
+
+function rebuildIndex(){
+  byBarcode = {}; byCode = {};
+  master.forEach(function(it){
+    byCode[it.code.toUpperCase()] = it;
+    // several barcodes per item are allowed, separated by |
+    String(it.bu||'').split('|').forEach(function(b){ b=b.trim(); if(b) byBarcode[b] = {it:it, type:'U'}; });
+    String(it.bc||'').split('|').forEach(function(b){ b=b.trim(); if(b) byBarcode[b] = {it:it, type:'C'}; });
+  });
+  $('hdrMaster').textContent = 'Item master: ' + master.length + (window.SEED ? ' | build ' + window.SEED.version : '');
+}
+
+/* CSV */
+function parseCSV(text){
+  var rows=[], row=[], f='', q=false, i, c;
+  text = text.replace(/^﻿/,'');
+  for(i=0;i<text.length;i++){
+    c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if(c==='"') q=true;
+    else if(c===','){ row.push(f); f=''; }
+    else if(c==='\n'){ row.push(f); rows.push(row); row=[]; f=''; }
+    else if(c!=='\r') f+=c;
+  }
+  if(f!=='' || row.length){ row.push(f); rows.push(row); }
+  return rows.filter(function(r){ return r.join('').trim()!==''; });
+}
+function csvCell(v){ v = String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+function toCSV(rows){ return rows.map(function(r){ return r.map(csvCell).join(','); }).join('\r\n'); }
+function download(name, text, type){
+  var blob = new Blob([(type ? '' : '﻿') + text], {type: type || 'text/csv'});
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+function importMaster(text){
+  var rows = parseCSV(text); if(!rows.length) return 'Empty file.';
+  var h = rows[0].map(function(x){ return x.trim().toLowerCase(); });
+  function col(n){ return h.indexOf(n.toLowerCase()); }
+  var ci = {code:col('ItemCode'), desc:col('Description'), bu:col('UnitBarcode'), bc:col('CartonBarcode'), upc:col('UnitsPerCarton'), uom:col('C40UOM')};
+  if(ci.code<0) return 'Column "ItemCode" not found in the first row.';
+  var out=[], seen={};
+  rows.slice(1).forEach(function(r){
+    var code = norm(r[ci.code]); if(!code || seen[code.toUpperCase()]) return; seen[code.toUpperCase()]=1;
+    out.push({code:code, desc:ci.desc>=0?norm(r[ci.desc]):'', bu:ci.bu>=0?norm(r[ci.bu]):'', bc:ci.bc>=0?norm(r[ci.bc]):'',
+      upc:ci.upc>=0?(parseFloat(r[ci.upc])||0):0, uom:ci.uom>=0&&norm(r[ci.uom]).toUpperCase()==='CARTON'?'CARTON':'UNIT'});
+  });
+  master = out; save(K.master, master); rebuildIndex();
+  return 'Loaded ' + out.length + ' items (' + out.filter(function(x){return x.bu||x.bc;}).length + ' with a barcode).';
+}
+
+/* UI helpers */
+function alertMsg(id, text, ok){ $(id).innerHTML = '<div class="msg '+(ok?'ok':'bad')+'">'+esc(text)+'</div>'; }
+function showTab(t){
+  document.querySelectorAll('.tabs button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tab')===t); });
+  ['takes','count','lines','setup'].forEach(function(x){ $('tab-'+x).classList.toggle('hide', x!==t); });
+  if(t==='lines') renderLines();
+  if(t==='takes'){ renderTakes(); refreshProgress(); }
+  if(t==='count'){ renderStart(); if(session) focusScan(); }
+}
+function focusScan(){ setTimeout(function(){ if(!current && !linkCode) $('scan').focus(); }, 50); }
+
+/* ---------- Stock takes ---------- */
+function linesFor(pid){ return load('isc_p_' + pid + '_lines', []).length; }
+function renderTakes(){
+  $('takeBody').innerHTML = projects.map(function(p){
+    var on = p.id === activePid;
+    return '<tr><td><b>'+esc(p.name)+'</b>'+(on?' <span class="tag">open</span>':'')+(p.closed?' <span class="tag">closed</span>':'')+'</td><td>'+esc(p.company+' | '+p.location)+'</td><td>'+esc(p.date)+'</td><td>'+
+      p.teams.map(function(t){ return '<span class="tag">'+esc(t.name)+' ('+t.members.length+')</span>'; }).join('')+'</td><td class="n">'+linesFor(p.id)+'</td><td style="white-space:nowrap">'+
+      (on ? '' : '<button class="small" data-openp="'+esc(p.id)+'">Open</button> ')+'<button class="sec small need-lead" data-expp="'+esc(p.id)+'">Export plan</button> <button class="sec small need-lead" data-delp="'+esc(p.id)+'">Remove</button></td></tr>';
+  }).join('') || '<tr><td colspan="6" class="small">No stock takes yet. Create one below, or load a plan file from the count lead.</td></tr>';
+}
+function teamRow(t){
+  var tr = document.createElement('tr');
+  tr.innerHTML = '<td><input type="text" class="tName" value="'+esc(t?t.name:'')+'" placeholder="Team A"></td>'+
+    '<td><input type="text" class="tMembers" value="'+esc(t?t.members.join(', '):'')+'" placeholder="Kamal, Nimal"></td>'+
+    '<td><input type="text" class="tBins" value="'+esc(t?t.bins.join(', '):'')+'" placeholder="CR1-R01, CR1-R02"></td>'+
+    '<td><button class="sec small" data-rmteam="1">✕</button></td>';
+  $('teamBody').appendChild(tr);
+}
+function clearTakeForm(){
+  $('pName').value=''; $('pLocation').value=''; $('pDate').value = new Date().toISOString().slice(0,10);
+  $('teamBody').innerHTML=''; teamRow(null); teamRow(null);
+}
+function planOf(p){ return {type:'iceman-stocktake', version:2, exported:new Date().toISOString().slice(0,16).replace('T',' '), project:p, items:master, users:users}; }
+function importPlan(text, msgId){
+  var plan = JSON.parse(text);
+  if(!plan || plan.type !== 'iceman-stocktake' || !plan.project) throw new Error('not a stock take plan file');
+  if(plan.items && plan.items.length) mergeItems(plan.items);
+  if(plan.users && plan.users.length){
+    plan.users.forEach(function(u){ if(u && u.username && u.hash){ users = users.filter(function(x){ return x.username !== u.username; }); users.push(u); } });
+    save('isc_users', users);
+  }
+  addProject(plan.project, true); rebuildIndex(); renderTakes(); renderSession(); renderLines(); renderUsers();
+  alertMsg(msgId, 'Loaded "' + plan.project.name + '" (' + plan.project.teams.length + ' teams, ' + (plan.items ? plan.items.length : 0) + ' items' + (plan.users ? ', ' + plan.users.length + ' users' : '') + ').', true);
+  return plan;
+}
+
+/* ---------- sign-in (accounts kept on this device; passwords stored only as salted SHA-256 hashes) ---------- */
+function sha256(msg){
+  var s = unescape(encodeURIComponent(msg)), K = [
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  var H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19], l = s.length, W = [], i, j;
+  for(i = 0; i < l; i++) W[i>>2] |= (s.charCodeAt(i) & 0xff) << (24 - (i%4)*8);
+  W[l>>2] |= 0x80 << (24 - (l%4)*8);
+  W[(((l + 8) >> 6) + 1) * 16 - 1] = l * 8;
+  for(j = 0; j < W.length; j += 16){
+    var w = [], a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for(i = 0; i < 64; i++){
+      if(i < 16) w[i] = W[j+i] | 0;
+      else { var x = w[i-15], y = w[i-2];
+        w[i] = (w[i-16] + (((x>>>7)|(x<<25)) ^ ((x>>>18)|(x<<14)) ^ (x>>>3)) + w[i-7] + (((y>>>17)|(y<<15)) ^ ((y>>>19)|(y<<13)) ^ (y>>>10))) | 0; }
+      var t1 = (h + (((e>>>6)|(e<<26)) ^ ((e>>>11)|(e<<21)) ^ ((e>>>25)|(e<<7))) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      var t2 = ((((a>>>2)|(a<<30)) ^ ((a>>>13)|(a<<19)) ^ ((a>>>22)|(a<<10))) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0]=(H[0]+a)|0; H[1]=(H[1]+b)|0; H[2]=(H[2]+c)|0; H[3]=(H[3]+d)|0; H[4]=(H[4]+e)|0; H[5]=(H[5]+f)|0; H[6]=(H[6]+g)|0; H[7]=(H[7]+h)|0;
+  }
+  return H.map(function(v){ return ('00000000' + (v >>> 0).toString(16)).slice(-8); }).join('');
+}
+function hashPw(salt, pw){ var h = sha256(salt + ':' + pw); for(var i = 0; i < 1000; i++) h = sha256(salt + h); return h; }
+function newSalt(){
+  var a = new Uint8Array(16);
+  if(window.crypto && crypto.getRandomValues) crypto.getRandomValues(a); else for(var i = 0; i < 16; i++) a[i] = Math.floor(Math.random()*256);
+  return Array.prototype.map.call(a, function(b){ return ('0' + b.toString(16)).slice(-2); }).join('');
+}
+var users = load('isc_users', []), me = null;
+var ROLE = {admin:'Admin', lead:'Count lead', counter:'Counter'};
+function findUser(u){ u = norm(u).toLowerCase(); return users.filter(function(x){ return x.username === u; })[0] || null; }
+function setUser(name, username, role, pw){
+  username = norm(username).toLowerCase();
+  var salt = newSalt(), u = {name:norm(name), username:username, role:role, salt:salt, hash:hashPw(salt, pw)};
+  users = users.filter(function(x){ return x.username !== username; }); users.push(u); save('isc_users', users);
+  return u;
+}
+function applyRole(){
+  document.body.classList.remove('role-admin','role-lead','role-counter');
+  if(me) document.body.classList.add('role-' + me.role);
+  $('hdrUser').textContent = me ? me.name + ' · ' + ROLE[me.role] : '';
+}
+function showLogin(msg, ok){
+  me = null; save('isc_me', ''); save('isc_me_cloud', null); applyRole();
+  var first = !CLOUD && !users.length;
+  document.querySelector('.login-alt').classList.toggle('hide', CLOUD);
+  document.querySelector('.login-foot').textContent = CLOUD
+    ? 'Accounts are made by the Admin. After the first sign-in on this phone you can also sign in without internet.'
+    : 'Accounts are kept on this device. Ask the count lead if you cannot sign in.';
+  $('loginForm').classList.toggle('hide', first); $('setupForm').classList.toggle('hide', !first);
+  $('loginHint').textContent = first ? 'First-time setup on this device' : 'Sign in to continue';
+  $('loginMsg').innerHTML = ''; if(msg) alertMsg('loginMsg', msg, ok);
+  $('loginScreen').classList.remove('hide');
+  setTimeout(function(){ (first ? $('aName') : $('lUser')).focus(); }, 50);
+}
+function signIn(u){
+  me = u; if(CLOUD) save('isc_me_cloud', u); else save('isc_me', u.username); applyRole();
+  $('loginScreen').classList.add('hide'); $('lPass').value = ''; $('loginMsg').innerHTML = '';
+  if(!session) $('sCounter').value = u.name;
+  renderUsers(); renderTakes(); showTab('count');
+}
+function renderUsers(){
+  if(CLOUD){
+    $('userBody').innerHTML = cloudUsers.map(function(u){
+      var mine = me && u.id === me.id;
+      return '<tr'+(u.active?'':' style="opacity:.55"')+'><td>'+esc(u.full_name)+'</td><td>'+esc(u.username)+'</td><td><span class="tag">'+esc(ROLE[u.role]||u.role)+'</span>'+(u.active?'':' <span class="tag">switched off</span>')+'</td><td>'+
+        (mine ? '<span class="small">you</span>' : '<button class="sec small" data-active="'+esc(u.id)+'" data-on="'+(u.active?'0':'1')+'">'+(u.active?'Switch off':'Switch on')+'</button>')+'</td></tr>';
+    }).join('') || '<tr><td colspan="4" class="small">Users show here when this phone is online.</td></tr>';
+    return;
+  }
+  $('userBody').innerHTML = users.map(function(u){
+    return '<tr><td>'+esc(u.name)+'</td><td>'+esc(u.username)+'</td><td><span class="tag">'+esc(ROLE[u.role]||u.role)+'</span></td><td>'+
+      (me && u.username === me.username ? '<span class="small">you</span>' : '<button class="sec small" data-rmuser="'+esc(u.username)+'">Remove</button>')+'</td></tr>';
+  }).join('') || '<tr><td colspan="4" class="small">No users.</td></tr>';
+}
+function addProject(p, makeActive){
+  projects = projects.filter(function(x){ return x.id !== p.id; }); projects.push(p); save('isc_projects', projects);
+  if(makeActive) useProject(p.id);
+}
+
+/* ---------- cloud database (Supabase): sign-in, offline queue, sync, live progress ----------
+   Every change is saved on the phone first and put in an outbox; the outbox is sent when the
+   phone is online. Rows carry a client_id, so sending twice never makes a duplicate. */
+var CFG = window.ISC_CLOUD || null, CLOUD = !!(CFG && CFG.url && CFG.key);
+var sb = null, cloudUsers = [], syncing = false, needSignIn = false;
+var outbox = load('isc_outbox', []), failed = load('isc_outbox_failed', []), lastSync = load('isc_lastsync', '');
+function ensureClient(){
+  if(!sb && CLOUD && window.supabase && supabase.createClient)
+    sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:true, autoRefreshToken:true, storageKey:'isc_sb_auth'}});
+  return sb;
+}
+// the library is missing when the app was opened without internet: load it when the phone is back online
+function loadLib(){
+  if(!CLOUD || window.supabase || loadLib.busy) return;
+  loadLib.busy = true;
+  var s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
+  s.onload = function(){ loadLib.busy = false; if(ensureClient() && me) cloudStart(); };
+  s.onerror = function(){ loadLib.busy = false; s.remove(); };
+  document.head.appendChild(s);
+}
+function toEmail(u){ u = norm(u).toLowerCase(); return u.indexOf('@') >= 0 ? u : u + '@' + (CFG.domain || 'iceman-stock.local'); }
+function deviceId(){ var d = load('isc_device', ''); if(!d){ d = newSalt().slice(0, 8); save('isc_device', d); } return d; }
+function newCid(){ return deviceId() + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
+function takeOf(pid){ return projects.filter(function(p){ return p.id === pid; })[0] || null; }
+function takeIdOf(s){ var p = s && s.projectId ? takeOf(s.projectId) : null; return p && p.cloud ? p.id : null; }
+function myId(){ return me ? me.id : null; }
+function myOutbox(){ return me ? outbox.filter(function(o){ return o.uid === me.id; }) : []; }
+
+/* sign-in: online against Supabase; offline with the hash saved at the last online sign-in on this phone */
+function loadProfile(user){
+  return sb.from('profiles').select('full_name, username, role, active').eq('id', user.id).maybeSingle().then(function(r){
+    if(r.error) return undefined;                  // could not check
+    var p = r.data; if(!p || !p.active) return null;   // no access
+    return {id:user.id, name:p.full_name || p.username, username:p.username || user.email.split('@')[0], role:p.role, cloud:true};
+  });
+}
+function cloudSignIn(username, pw){
+  username = norm(username).toLowerCase();
+  var off = load('isc_offline_users', {});
+  function tryOffline(why){
+    var o = off[username];
+    if(o && hashPw(o.salt, pw) === o.hash){ needSignIn = true; signIn(o.me); updateSyncChip(); if(sb && navigator.onLine !== false) cloudStart(); return; }
+    $('lPass').value = ''; alertMsg('loginMsg', why, false);
+  }
+  if(!ensureClient() || navigator.onLine === false){ loadLib(); tryOffline('No internet. Offline sign-in works only for a user who signed in on this phone before.'); return; }
+  alertMsg('loginMsg', 'Signing in...', true);
+  sb.auth.signInWithPassword({email:toEmail(username), password:pw}).then(function(r){
+    if(r.error){
+      if(r.error.status >= 400 && r.error.status < 500){
+        delete off[username]; save('isc_offline_users', off); $('lPass').value = '';
+        alertMsg('loginMsg', /banned/i.test(r.error.message) ? 'This user is switched off. Ask the Admin.' : 'Wrong username or password.', false); return;
+      }
+      tryOffline('Could not reach the server (' + r.error.message + ').'); return;
+    }
+    return loadProfile(r.data.user).then(function(u){
+      if(!u){ sb.auth.signOut(); alertMsg('loginMsg', 'This user has no active access. Ask the Admin.', false); return; }
+      var salt = newSalt(); off[username] = {salt:salt, hash:hashPw(salt, pw), me:u}; save('isc_offline_users', off);
+      needSignIn = false; signIn(u); cloudStart();
+    });
+  }).catch(function(){ tryOffline('Could not reach the server.'); });
+}
+// check the saved Supabase session, refresh the role, then send the outbox and fetch items / stock takes
+function cloudStart(){
+  if(!ensureClient() || !me) return;
+  sb.auth.getSession().then(function(r){
+    if(r.error){ updateSyncChip(); return; }
+    var s = r.data && r.data.session;
+    if(!s || s.user.id !== me.id){ needSignIn = true; updateSyncChip(); return; }
+    needSignIn = false;
+    return loadProfile(s.user).then(function(u){
+      if(u === null){ showLogin('Your access was switched off. Ask the Admin.', false); return; }
+      if(u){ me = u; save('isc_me_cloud', u); applyRole(); }
+      return syncNow().then(pullAll).then(function(){ loadCloudUsers(); refreshProgress(); });
+    });
+  }).catch(function(){ updateSyncChip(); });
+}
+
+/* outbox */
+function queue(kind, row){
+  if(!CLOUD || !me) return;
+  outbox.push({k:kind, uid:me.id, r:row}); save('isc_outbox', outbox); updateSyncChip();
+  clearTimeout(queue.t); queue.t = setTimeout(syncNow, 1500);
+}
+function lineRow(l, s){
+  return {client_id:l.cid || String(l.id), stock_take_id:takeIdOf(s), company:s.company, location:s.location, team:s.team || null,
+    counter_name:s.counter, user_id:myId(), item_code:l.code, description:l.desc, cartons:l.cartons, loose:l.loose,
+    units_per_carton:l.upc || null, total_units:l.total, expiry:l.expiry || null, lot:l.lot || null, bin:l.bin || null,
+    scanned_at:l.ts || new Date().toISOString(), deleted:!!l.deleted};
+}
+function queueLink(code, it, type){
+  queue('link', {barcode:code, company:session ? session.company : pullCompany(), item_code:it.code, pack:type === 'C' ? 'C' : 'U', created_by:myId()});
+}
+var TABLE = {line:['count_lines','client_id',false], unk:['unknown_barcodes','client_id',true], link:['barcode_links','company,barcode',true], item:['items','company,code',true]};
+function send(kind, rows){
+  if(kind === 'take'){
+    var x = rows[0];
+    return sb.from('stock_takes').upsert(x.take, {onConflict:'id'}).then(function(r){
+      if(r.error) return r;
+      return sb.from('teams').delete().eq('stock_take_id', x.take.id).then(function(r2){
+        return r2.error || !x.teams.length ? r2 : sb.from('teams').insert(x.teams);
+      });
+    });
+  }
+  var t = TABLE[kind];
+  return sb.from(t[0]).upsert(rows, {onConflict:t[1], ignoreDuplicates:t[2]});
+}
+// auth = sign in again; data = the database refused the row (kept aside); net = try again later
+function errKind(e){
+  if(!e) return '';
+  if(e.status === 401 || /JWT|PGRST301/.test((e.message || '') + ' ' + (e.code || ''))) return 'auth';
+  if(/^(\d{5}|PGRST\d+)$/.test(e.code || '')) return 'data';
+  return 'net';
+}
+function syncNow(){
+  if(!CLOUD || !me || syncing) return Promise.resolve();
+  if(!ensureClient()){ loadLib(); updateSyncChip(); return Promise.resolve(); }
+  if(needSignIn || navigator.onLine === false || !myOutbox().length){ updateSyncChip(); return Promise.resolve(); }
+  syncing = true; updateSyncChip();
+  function done(list, err){
+    outbox = outbox.filter(function(o){ return list.indexOf(o) < 0; }); save('isc_outbox', outbox);
+    if(err){ list.forEach(function(o){ o.err = err; failed.push(o); }); save('isc_outbox_failed', failed); }
+  }
+  function check(r){ var k = errKind(r && r.error); if(k === 'auth') needSignIn = true; if(k === 'auth' || k === 'net') throw 'stop'; return k; }
+  function step(){
+    var mine = myOutbox(); if(!mine.length) return Promise.resolve();
+    var k = mine[0].k, batch = [mine[0]];
+    if(k !== 'take') for(var j = 1; j < mine.length && batch.length < 200 && mine[j].k === k; j++) batch.push(mine[j]);
+    return Promise.resolve(send(k, batch.map(function(o){ return o.r; }))).then(function(r){
+      var kind = check(r);
+      if(kind === 'data' && batch.length > 1){   // find the refused row: send the batch one by one
+        return batch.reduce(function(pr, o){
+          return pr.then(function(){ return Promise.resolve(send(k, [o.r])).then(function(r1){ var k1 = check(r1); done([o], k1 ? r1.error.message : ''); }); });
+        }, Promise.resolve()).then(step);
+      }
+      done(batch, kind ? r.error.message : '');
+      return step();
+    });
+  }
+  return step().then(function(){ lastSync = nowTime().slice(0, 5); save('isc_lastsync', lastSync); }, function(e){ if(e !== 'stop') console.error(e); })
+    .then(function(){ syncing = false; updateSyncChip(); });
+}
+function updateSyncChip(){
+  var c = $('hdrSync'); c.classList.remove('on', 'wait', 'bad');
+  if(!CLOUD){ c.textContent = 'Device only'; return; }
+  var n = myOutbox().length, w = n ? ' · ' + n + ' waiting' : '', txt, cls;
+  if(!me){ txt = 'Cloud'; cls = ''; }
+  else if(syncing){ txt = 'Syncing' + w; cls = 'wait'; }
+  else if(needSignIn){ txt = (navigator.onLine === false ? 'Offline' : 'Sign in to send') + w; cls = navigator.onLine === false ? 'wait' : 'bad'; }
+  else if(!sb || navigator.onLine === false){ txt = 'Offline' + w; cls = 'wait'; }
+  else if(n){ txt = 'Online' + w; cls = 'wait'; }
+  else { txt = 'Synced' + (lastSync ? ' ' + lastSync : ''); cls = 'on'; }
+  if(failed.length){ txt += ' · ' + failed.length + ' refused'; cls = 'bad'; }
+  c.textContent = txt; if(cls) c.classList.add(cls);
+  c.title = 'Click to sync now';
+}
+
+/* pull: open stock takes with teams, and the item master + barcodes of one company */
+function pageAll(table, cols, filter){
+  var out = [], size = 1000;
+  function next(from){
+    return filter(sb.from(table).select(cols)).range(from, from + size - 1).then(function(r){
+      if(r.error) throw r.error; out = out.concat(r.data); return r.data.length === size ? next(from + size) : out;
+    });
+  }
+  return next(0);
+}
+function pullCompany(){ var p = project(); return p ? p.company : (session ? session.company : $('sCompany').value); }
+function pullItems(company){
+  return Promise.all([
+    pageAll('items', 'code, description, units_per_carton, c40_uom', function(q){ return q.eq('company', company).order('code'); }),
+    pageAll('barcode_links', 'barcode, item_code, pack', function(q){ return q.eq('company', company).order('barcode'); })
+  ]).then(function(res){
+    if(!res[0].length) return 0;   // nothing uploaded for this company yet: keep the items on the phone
+    var by = {}, items = res[0].map(function(r){
+      var it = {code:r.code, desc:r.description, bu:'', bc:'', upc:+r.units_per_carton || 0, uom:r.c40_uom || 'UNIT'};
+      by[r.code.toUpperCase()] = it; return it;
+    });
+    res[1].forEach(function(l){ var it = by[l.item_code.toUpperCase()]; if(!it) return; var f = l.pack === 'C' ? 'bc' : 'bu'; it[f] = it[f] ? it[f] + '|' + l.barcode : l.barcode; });
+    var cur = load('isc_master_company', SEED && SEED.company || '');
+    if(cur && cur !== company) master = [];   // another company's items: replace, don't mix
+    mergeItems(items); save('isc_master_company', company); rebuildIndex();
+    return items.length;
+  });
+}
+function pullTakes(){
+  return Promise.all([
+    sb.from('stock_takes').select('id, name, company, location, count_date, created_at').eq('status', 'open'),
+    sb.from('teams').select('stock_take_id, name, members, bins')
+  ]).then(function(res){
+    if(res[0].error) throw res[0].error;
+    var open = {}, teams = res[1].data || [];
+    res[0].data.forEach(function(t){
+      open[t.id] = 1;
+      var p = {id:t.id, name:t.name, company:t.company, location:t.location, date:t.count_date, cloud:true, created:String(t.created_at || '').slice(0, 16).replace('T', ' '),
+        teams:teams.filter(function(x){ return x.stock_take_id === t.id; }).map(function(x){ return {name:x.name, members:x.members || [], bins:x.bins || []}; })};
+      projects = projects.filter(function(x){ return x.id !== p.id; }); projects.push(p);
+    });
+    var waiting = outbox.filter(function(o){ return o.k === 'take'; }).map(function(o){ return o.r.take.id; });
+    projects.forEach(function(p){ if(p.cloud && !open[p.id] && waiting.indexOf(p.id) < 0) p.closed = true; else delete p.closed; });
+    save('isc_projects', projects); renderTakes(); renderStart();
+  });
+}
+function pullAll(){
+  if(!ensureClient() || !me || needSignIn || navigator.onLine === false) return Promise.resolve();
+  return pullTakes().then(function(){ return pullItems(pullCompany()); }).catch(function(e){ console.warn('pull', e); });
+}
+
+/* count lead: upload the item master on this phone to the cloud */
+function chunks(arr, n, fn){
+  var p = Promise.resolve();
+  for(var i = 0; i < arr.length; i += n) (function(c){ p = p.then(function(){ return fn(c).then(function(r){ if(r.error) throw r.error; }); }); })(arr.slice(i, i + n));
+  return p;
+}
+function pushItems(){
+  var company = $('cCompany').value;
+  if(!sb || needSignIn){ alertMsg('cloudMsg', 'Sign in online first.', false); return; }
+  if(!master.length){ alertMsg('cloudMsg', 'The item master on this phone is empty. Load the CSV above first.', false); return; }
+  if(!confirm('Upload ' + master.length + ' items to the cloud as company ' + company + '?')) return;
+  var now = new Date().toISOString(), seen = {}, links = [];
+  var rows = master.map(function(it){ return {company:company, code:it.code, description:it.desc || '', units_per_carton:it.upc || null, c40_uom:it.uom === 'CARTON' ? 'CARTON' : 'UNIT', is_new:/\[NEW\]/.test(it.desc || ''), updated_at:now}; });
+  master.forEach(function(it){ [['bu','U'],['bc','C']].forEach(function(f){ String(it[f[0]] || '').split('|').forEach(function(b){
+    b = b.trim(); if(b && !seen[b]){ seen[b] = 1; links.push({barcode:b, company:company, item_code:it.code, pack:f[1], created_by:me.id}); } }); }); });
+  alertMsg('cloudMsg', 'Uploading...', true);
+  chunks(rows, 500, function(c){ return sb.from('items').upsert(c, {onConflict:'company,code'}); })
+    .then(function(){ return chunks(links, 500, function(c){ return sb.from('barcode_links').upsert(c, {onConflict:'company,barcode', ignoreDuplicates:true}); }); })
+    .then(function(){ save('isc_master_company', company); alertMsg('cloudMsg', 'Uploaded ' + rows.length + ' items and ' + links.length + ' barcodes for ' + company + '. Phones get them at their next sync.', true); })
+    .catch(function(e){ alertMsg('cloudMsg', 'Upload stopped: ' + (e.message || e), false); });
+}
+
+/* count lead: live progress per team / rack, all lines as one CSV, close the stock take */
+var progChan = null, progPid = '';
+function refreshProgress(){
+  var p = project(), show = !!(CLOUD && me && me.role !== 'counter' && p && p.cloud && sb && !needSignIn);
+  $('progressCard').classList.toggle('hide', !show);
+  if(!show){ if(progChan){ sb.removeChannel(progChan); progChan = null; progPid = ''; } return; }
+  $('progTitle').textContent = '· ' + p.name + (p.closed ? ' (closed)' : '');
+  $('btnCloseTake').classList.toggle('hide', !!p.closed);
+  sb.from('v_progress').select('*').eq('stock_take_id', p.id).order('team').order('bin').then(function(r){
+    if(r.error){ $('progBody').innerHTML = '<tr><td colspan="6" class="small">' + esc(r.error.message) + '</td></tr>'; return; }
+    var tl = 0, tu = 0;
+    $('progBody').innerHTML = r.data.map(function(x){
+      tl += +x.lines; tu += +x.units;
+      return '<tr><td>' + esc(x.team || '-') + '</td><td>' + esc(x.bin) + '</td><td class="n">' + x.lines + '</td><td class="n">' + Number(x.units).toLocaleString() + '</td><td class="n">' + x.counters + '</td><td>' + (x.last_scan ? new Date(x.last_scan).toTimeString().slice(0, 5) : '') + '</td></tr>';
+    }).join('') + (r.data.length ? '<tr><td><b>Total</b></td><td></td><td class="n"><b>' + tl + '</b></td><td class="n"><b>' + tu.toLocaleString() + '</b></td><td></td><td></td></tr>'
+      : '<tr><td colspan="6" class="small">Nothing received yet. Lines show here when the phones are online.</td></tr>');
+  });
+  if(progPid !== p.id){
+    if(progChan) sb.removeChannel(progChan);
+    progPid = p.id;
+    progChan = sb.channel('prog-' + p.id).on('postgres_changes', {event:'*', schema:'public', table:'count_lines', filter:'stock_take_id=eq.' + p.id},
+      function(){ clearTimeout(refreshProgress.t); refreshProgress.t = setTimeout(refreshProgress, 1500); }).subscribe();
+  }
+}
+function exportCloudLines(){
+  var p = project(); if(!p || !sb) return;
+  alertMsg('takeMsg', 'Downloading all lines...', true);
+  Promise.all([
+    pageAll('count_lines', '*', function(q){ return q.eq('stock_take_id', p.id).eq('deleted', false).order('scanned_at'); }),
+    pageAll('unknown_barcodes', '*', function(q){ return q.eq('stock_take_id', p.id).order('scanned_at'); })
+  ]).then(function(res){
+    var who = {}, t = function(v){ return v ? new Date(v).toTimeString().slice(0, 8) : ''; };
+    var rows = [['Company','Location','CountDate','Counter','ItemCode','Description','Cartons','Loose','UnitsPerCarton','TotalUnits','Expiry','Lot','Bin','ScanTime','Barcode','CountStarted','ProjectId','ProjectName','Team']];
+    res[0].forEach(function(l){ who[l.user_id] = l.counter_name;
+      rows.push([l.company, l.location, p.date, l.counter_name, l.item_code, l.description, l.cartons, l.loose, l.units_per_carton || '', l.total_units == null ? '' : l.total_units, l.expiry || '', l.lot || '', l.bin || '', t(l.scanned_at), '', '', p.id, p.name, l.team || '']); });
+    res[1].forEach(function(u){
+      rows.push([p.company, p.location, p.date, who[u.user_id] || '', '', 'UNKNOWN BARCODE', '', '', '', '', '', '', '', t(u.scanned_at), u.barcode, '', p.id, p.name, '']); });
+    download(safeName('Count ' + p.name + ' ' + p.company + ' ' + p.location + ' ' + p.date + ' ALL PHONES') + '.csv', toCSV(rows));
+    alertMsg('takeMsg', 'Downloaded ' + res[0].length + ' lines and ' + res[1].length + ' unknown barcodes from all phones.', true);
+  }).catch(function(e){ alertMsg('takeMsg', 'Could not download: ' + (e.message || e), false); });
+}
+
+/* admin: users through the "admin-users" function (it checks that the caller is an active Admin) */
+function adminCall(body){
+  return sb.functions.invoke('admin-users', {body:body}).then(function(r){
+    if(r.error){
+      var ctx = r.error.context;
+      if(ctx && ctx.json) return ctx.json().then(function(j){ throw new Error(j.error || r.error.message); }, function(){ throw r.error; });
+      throw r.error;
+    }
+    if(r.data && r.data.error) throw new Error(r.data.error);
+    return r.data;
+  });
+}
+function loadCloudUsers(){
+  if(!me || me.role !== 'admin' || !sb || needSignIn) return;
+  adminCall({action:'list'}).then(function(d){ cloudUsers = d.users || []; renderUsers(); })
+    .catch(function(e){ alertMsg('userMsg', 'Could not load users: ' + e.message, false); });
+}
+
+/* Unknown barcode: link it to an item (or add a new item) on the spot, then count it */
+var linkCode = '', linkGs = null;
+function openLink(code, gs){
+  linkCode = code; linkGs = gs || null;
+  $('lkCode').textContent = code;
+  $('lkType').value = code.length === 14 ? 'C' : 'U';   // 14-digit codes are usually carton (GTIN-14 / ITF-14)
+  $('lkSearch').value = ''; $('lkRes').innerHTML = ''; $('nCode').value = ''; $('nDesc').value = ''; $('nUpc').value = '';
+  $('scanMsg').innerHTML = ''; $('linkBox').style.display = 'block';
+  setTimeout(function(){ $('lkSearch').focus(); }, 30);
+}
+function closeLink(){ linkCode = ''; linkGs = null; $('linkBox').style.display = 'none'; $('scan').value = ''; focusScan(); }
+function skipLink(){
+  if(!linkCode) return;
+  var u = {barcode:linkCode, t:nowTime(), cid:newCid(), ts:new Date().toISOString()};
+  unknown.push(u); save(K.unk, unknown); updateStats();
+  queue('unk', {client_id:u.cid, stock_take_id:takeIdOf(session), barcode:u.barcode, user_id:myId(), scanned_at:u.ts});
+  alertMsg('scanMsg','Barcode '+linkCode+' kept in the unknown list ("Counted lines").', false);
+  closeLink();
+}
+function linkTo(it){
+  var code = linkCode, type = $('lkType').value, gs = linkGs, f = type === 'C' ? 'bc' : 'bu';
+  if(String(it[f]||'').split('|').indexOf(code) < 0) it[f] = it[f] ? it[f] + '|' + code : code;
+  save(K.master, master); rebuildIndex(); closeLink(); queueLink(code, it, type);
+  alertMsg('scanMsg','Barcode '+code+' linked to '+it.code+' ('+(type==='C'?'carton':'unit')+'). Next scans will find it.', true);
+  beep(true);
+  if($('quick').checked){ addLine(it, type==='C'?1:0, type==='U'?1:0, gs?gs.expiry:'', 'scan', gs?gs.lot:''); return; }
+  openEntry(it, type, gs);
+}
+function linkSearch(){
+  var q = norm($('lkSearch').value).toUpperCase();
+  if(q.length < 2){ $('lkRes').innerHTML = ''; return []; }
+  var res = master.filter(function(it){ return it.code.toUpperCase().indexOf(q)>=0 || it.desc.toUpperCase().indexOf(q)>=0; }).slice(0,12);
+  $('lkRes').innerHTML = res.map(function(it){ return '<div class="btns" style="margin-top:6px"><button class="sec" data-linkpick="'+esc(it.code)+'">'+esc(it.code+'  '+it.desc)+'</button></div>'; }).join('') || '<p class="small">No match. Try another word, or add it as a new item below.</p>';
+  return res;
+}
+
+/* Start card: a stock take fixes company / location / date and offers its teams */
+function currentTeam(){ var p = project(); if(!p) return null; var n = $('sTeam').value; return p.teams.filter(function(t){ return t.name === n; })[0] || null; }
+function fillMembers(){
+  var t = currentTeam();
+  $('memberList').innerHTML = (t ? t.members : []).map(function(m){ return '<option value="'+esc(m)+'">'; }).join('');
+}
+function renderStart(){
+  var p = project();
+  $('hdrProject').textContent = p ? p.name : 'Quick count';
+  $('startProject').innerHTML = p ? '<div class="proj">Stock take: <b>'+esc(p.name)+'</b> · '+esc(p.company+' | '+p.location+' | '+p.date)+'</div>'
+    : '<p class="small">Quick count (no stock take). For a planned count with teams, open it in <b>Stock takes</b>.</p>';
+  $('teamWrap').classList.toggle('hide', !p);
+  ['sCompany','sLocation','sDate'].forEach(function(id){ $(id).disabled = !!p; });
+  if(p){
+    $('sCompany').value = p.company; $('sLocation').value = p.location; $('sDate').value = p.date;
+    var keep = $('sTeam').value;
+    $('sTeam').innerHTML = p.teams.map(function(t){ return '<option>'+esc(t.name)+'</option>'; }).join('');
+    if(keep && p.teams.some(function(t){ return t.name === keep; })) $('sTeam').value = keep;
+    fillMembers();
+  } else { $('memberList').innerHTML = ''; }
+}
+function renderSession(){
+  var on = !!session;
+  $('startCard').classList.toggle('hide', on); $('scanCard').classList.toggle('hide', !on);
+  $('hdrSession').textContent = on ? ((session.team ? session.team + ' · ' : '') + session.location + (session.bin?' / '+session.bin:'') + ' | ' + session.counter) : 'No count started';
+  var bins = on && session.bins ? session.bins : [];
+  $('binList').innerHTML = bins.map(function(b){ return '<option value="'+esc(b)+'">'; }).join('');
+  $('binTags').innerHTML = bins.length ? 'Your racks: ' + bins.map(function(b){ return '<span class="tag">'+esc(b)+'</span>'; }).join('') : '';
+  if(on) $('bin').value = session.bin || '';
+  renderStart();
+}
+
+/* GS1 barcodes (carton labels): (01) GTIN, (17) expiry YYMMDD, (15) best before, (10) lot, (37) count */
+function gs1Date(v){
+  if(!/^\d{6}$/.test(v)) return '';
+  var y = 2000 + +v.slice(0,2), m = +v.slice(2,4), d = +v.slice(4,6);
+  if(m < 1 || m > 12) return '';
+  if(d === 0) d = new Date(y, m, 0).getDate();
+  return y + '-' + ('0'+m).slice(-2) + '-' + ('0'+d).slice(-2);
+}
+function parseGS1(s){
+  s = String(s).replace(/^\](C1|e0|d2|Q3)/,'');
+  var ai = {}, m, i = 0;
+  if(s.indexOf('(') === 0){
+    var re = /\((\d{2,4})\)([^(]*)/g; while((m = re.exec(s))) ai[m[1]] = m[2].replace(/\x1d/g,'');
+  } else if(/^01\d{14}/.test(s)){
+    var fixed = {'00':18,'01':14,'02':14,'11':6,'12':6,'13':6,'15':6,'16':6,'17':6}, vari = ['10','21','30','37'];
+    while(i < s.length){
+      if(s[i] === '\x1d'){ i++; continue; }
+      var k = s.substr(i,2);
+      if(fixed[k]){ ai[k] = s.substr(i+2, fixed[k]); i += 2 + fixed[k]; }
+      else if(vari.indexOf(k) >= 0){ var e = s.indexOf('\x1d', i+2); if(e < 0) e = s.length; ai[k] = s.slice(i+2, e); i = e; }
+      else break;
+    }
+  } else return null;
+  var g = ai['01'] || ai['02'];
+  if(!g) return null;
+  return {gtin:g, expiry:gs1Date(ai['17'] || ai['15'] || ''), lot:ai['10'] || '', count:ai['37'] ? +ai['37'] : 0};
+}
+
+/* Scanning */
+function handleScan(raw){
+  var code = norm(raw); if(!code) return;
+  if(!session){ alertMsg('scanMsg','Start a count first.',false); return; }
+  var gs = parseGS1(code), keys = [code];
+  if(gs) keys = [gs.gtin, gs.gtin.replace(/^0+/,''), gs.gtin.slice(1), code];
+  var hit = null, type;
+  for(var j = 0; j < keys.length && !hit; j++){ if(byBarcode[keys[j]]){ hit = byBarcode[keys[j]]; type = hit.type; hit = hit.it; } }
+  if(!hit && byCode[code.toUpperCase()]){ hit = byCode[code.toUpperCase()]; type = 'U'; }
+  if(gs && hit && gs.gtin !== code) code = gs.gtin;
+  if(!hit){
+    if(gs) code = gs.gtin;
+    beep(false); openLink(code, gs); return;
+  }
+  beep(true);
+  if($('quick').checked){ addLine(hit, type==='C'?1:0, type==='U'?1:0, gs?gs.expiry:'', 'scan', gs?gs.lot:''); return; }
+  openEntry(hit, type, gs);
+}
+function openEntry(it, type, gs){
+  current = it;
+  $('eName').textContent = it.code + '  ' + it.desc;
+  $('eInfo').textContent = (it.upc ? it.upc+' units per carton' : 'Units per carton not set') + ' | scanned: ' + (type==='C'?'carton':'unit') + (gs ? ' | GS1 label read' : '');
+  $('eCartons').value = type==='C' ? 1 : 0; $('eLoose').value = type==='U' ? 1 : 0;
+  $('eExpiry').value = gs ? gs.expiry : ''; $('eLot').value = gs ? gs.lot : '';
+  $('entry').style.display = 'block';
+  setTimeout(function(){ var f = type==='C'?$('eCartons'):$('eLoose'); f.focus(); f.select(); }, 30);
+}
+function closeEntry(){ current = null; $('entry').style.display = 'none'; $('scan').value=''; focusScan(); }
+function addLine(it, cartons, loose, expiry, src, lot){
+  cartons = Math.max(0, parseFloat(cartons)||0); loose = Math.max(0, parseFloat(loose)||0);
+  if(!cartons && !loose){ alertMsg('scanMsg','Quantity is 0, nothing added.',false); return; }
+  var total = it.upc ? cartons*it.upc + loose : (cartons ? null : loose);
+  var l = {id:Date.now()+Math.random(), cid:newCid(), ts:new Date().toISOString(), code:it.code, desc:it.desc, cartons:cartons, loose:loose, upc:it.upc||0, total:total, expiry:expiry||'', lot:lot||'', bin:session.bin||'', t:nowTime(), src:src};
+  lines.push(l); save(K.lines, lines); queue('line', lineRow(l, session));
+  var warn = (cartons && !it.upc) ? ' Units per carton is not set for this item, so the total is left blank.' : '';
+  if(expiry){ var days = (new Date(expiry) - new Date(session.date)) / 86400000; if(days <= 30) warn += ' Expiry within 30 days (' + expiry + '): keep it aside and report it.'; }
+  updateStats();
+  alertMsg('scanMsg','Added '+it.code+': '+cartons+' carton(s) + '+loose+' unit(s).'+warn, !warn);
+  $('scan').value=''; focusScan();
+}
+function beep(ok){
+  try{ var ctx = new (window.AudioContext||window.webkitAudioContext)(), o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = ok ? 880 : 220; o.connect(g); g.connect(ctx.destination); g.gain.value = 0.08; o.start(); o.stop(ctx.currentTime + (ok?0.08:0.3));
+  }catch(e){}
+}
+
+/* Camera (BarcodeDetector, Chrome on Android) */
+var stream=null, detector=null, lastCode='', lastAt=0, camTimer=null;
+function camSupported(){ return ('BarcodeDetector' in window) && navigator.mediaDevices && navigator.mediaDevices.getUserMedia; }
+function startCam(){
+  if(!camSupported()){ alertMsg('scanMsg','This browser cannot scan with the camera. Use Chrome on an Android phone, or the barcode scanner.',false); return; }
+  if(stream){ stopCam(); return; }
+  try{ detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','qr_code']}); }
+  catch(e){ detector = new BarcodeDetector(); }
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(function(s){
+    stream = s; var v = $('cam'); v.srcObject = s; v.style.display = 'block'; v.play(); $('btnCam').textContent = 'Stop camera';
+    camTimer = setInterval(function(){
+      if(current || linkCode || v.readyState < 2) return;
+      detector.detect(v).then(function(codes){
+        if(!codes.length) return; var c = codes[0].rawValue, t = Date.now();
+        if(c === lastCode && t - lastAt < 2000) return; lastCode = c; lastAt = t; handleScan(c);
+      }).catch(function(){});
+    }, 350);
+  }).catch(function(e){
+    var hint = (e && e.name === 'NotAllowedError')
+      ? ' Camera permission is blocked. Android Settings > Apps > Chrome > Permissions > Camera: Allow. Then in Chrome: Settings > Site settings > Camera: remove this page from Blocked, reload and tap Allow.'
+      : (window.isSecureContext === false ? ' This browser does not allow the camera for a page opened this way.' : '');
+    alertMsg('scanMsg','Camera not available ('+(e && e.name ? e.name : 'error')+').'+hint,false);
+  });
+}
+function stopCam(){ if(camTimer) clearInterval(camTimer); camTimer=null; if(stream) stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; $('cam').style.display='none'; $('btnCam').textContent='Use phone camera'; }
+
+/* Lines */
+function updateStats(){
+  var units = lines.reduce(function(a, l){ return a + (l.total || 0); }, 0);
+  $('stLines').textContent = lines.length; $('stUnits').textContent = units.toLocaleString(); $('stUnknown').textContent = unknown.length;
+}
+function renderLines(){
+  updateStats();
+  $('lineCount').textContent = '(' + lines.length + ')' + (project() ? ' · ' + project().name : '');
+  $('lineBody').innerHTML = lines.slice().reverse().map(function(l){
+    return '<tr><td>'+esc(l.code)+'</td><td>'+esc(l.desc)+'</td><td class="n">'+l.cartons+'</td><td class="n">'+l.loose+'</td><td class="n">'+(l.total==null?'?':l.total)+'</td><td>'+esc(l.expiry)+'</td><td>'+esc(l.lot)+'</td><td>'+esc(l.bin)+'</td><td>'+esc(l.t)+'</td><td><button class="sec" data-del="'+l.id+'">Delete</button></td></tr>';
+  }).join('') || '<tr><td colspan="10" class="small">Nothing counted yet.</td></tr>';
+  $('unkCount').textContent = '(' + unknown.length + ')';
+  $('unkBody').innerHTML = unknown.map(function(u, i){
+    return '<tr><td>'+esc(u.barcode)+'</td><td>'+esc(u.t)+'</td><td><input type="text" id="lk'+i+'" placeholder="Item code"></td><td><select id="lt'+i+'"><option value="U">Unit</option><option value="C">Carton</option></select></td><td><button class="sec" data-link="'+i+'">Link</button></td></tr>';
+  }).join('') || '<tr><td colspan="5" class="small">None.</td></tr>';
+}
+function countCSV(){
+  var s = session, pid = s.projectId || '', pname = s.projectName || '', team = s.team || '';
+  var rows = [['Company','Location','CountDate','Counter','ItemCode','Description','Cartons','Loose','UnitsPerCarton','TotalUnits','Expiry','Lot','Bin','ScanTime','Barcode','CountStarted','ProjectId','ProjectName','Team']];
+  lines.forEach(function(l){ rows.push([s.company, s.location, s.date, s.counter, l.code, l.desc, l.cartons, l.loose, l.upc, l.total==null?'':l.total, l.expiry, l.lot||'', l.bin||'', l.t, '', s.started||'', pid, pname, team]); });
+  unknown.forEach(function(u){ rows.push([s.company, s.location, s.date, s.counter, '', 'UNKNOWN BARCODE', '', '', '', '', '', '', '', u.t, u.barcode, s.started||'', pid, pname, team]); });
+  return toCSV(rows);
+}
+function fileName(){
+  var s = session;
+  return safeName('Count ' + (s.projectName ? s.projectName + ' ' : '') + s.company + ' ' + s.location + ' ' + s.date + ' ' + (s.team ? s.team + ' ' : '') + s.counter) + '.csv';
+}
+
+/* Events */
+document.querySelectorAll('.tabs button').forEach(function(b){ b.onclick = function(){ showTab(b.getAttribute('data-tab')); }; });
+$('sDate').value = new Date().toISOString().slice(0,10);
+if(SEED){ if(SEED.company){ $('sCompany').value = SEED.company; $('pCompany').value = SEED.company; } $('hdrMaster').title = 'Build ' + SEED.version; }
+$('sTeam').addEventListener('change', fillMembers);
+$('btnStart').onclick = function(){
+  var p = project(), t = currentTeam();
+  var s = {counter:norm($('sCounter').value), location:norm($('sLocation').value), company:$('sCompany').value, date:$('sDate').value};
+  if(!s.counter || !s.location || !s.date){ alert('Fill counter name, location and date.'); return; }
+  if(!master.length && !confirm('The item master is empty, so barcodes will not be recognised. Start anyway?')) return;
+  if(p){ s.projectId = p.id; s.projectName = p.name; s.team = t ? t.name : ''; s.bins = t ? t.bins : []; }
+  s.started = new Date().toISOString().slice(0,16).replace('T',' '); s.bin = s.bins && s.bins.length === 1 ? s.bins[0] : '';
+  session = s; save(K.session, session); renderSession(); focusScan();
+};
+$('bin').addEventListener('change', function(){ if(session){ session.bin = norm(this.value); save(K.session, session); renderSession(); focusScan(); } });
+$('scan').addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); handleScan(this.value); this.value=''; } });
+$('btnAdd').onclick = function(){ if(current) { var it=current, lot=norm($('eLot').value); closeEntry(); addLine(it, $('eCartons').value, $('eLoose').value, $('eExpiry').value, 'scan', lot); } };
+$('btnCancel').onclick = closeEntry;
+$('entry').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); $('btnAdd').click(); } else if(e.key==='Escape'){ closeEntry(); } });
+$('btnCam').onclick = startCam;
+$('search').addEventListener('input', function(){
+  var q = norm(this.value).toUpperCase();
+  if(q.length < 2){ $('searchRes').innerHTML=''; return; }
+  var res = master.filter(function(it){ return it.code.toUpperCase().indexOf(q)>=0 || it.desc.toUpperCase().indexOf(q)>=0; }).slice(0,15);
+  $('searchRes').innerHTML = res.map(function(it){ return '<div class="btns" style="margin-top:6px"><button class="sec" data-pick="'+esc(it.code)+'">'+esc(it.code+'  '+it.desc)+'</button></div>'; }).join('') || '<p class="small">No match.</p>';
+});
+$('lkSearch').addEventListener('input', linkSearch);
+$('lkSearch').addEventListener('keydown', function(e){
+  if(e.key === 'Enter'){ e.preventDefault(); var r = linkSearch(); if(r.length === 1) linkTo(r[0]); }
+  else if(e.key === 'Escape'){ skipLink(); }
+});
+$('linkBox').addEventListener('keydown', function(e){ if(e.key === 'Escape' && e.target.id !== 'lkSearch') skipLink(); });
+$('btnSkipLink').onclick = skipLink;
+$('btnNewItem').onclick = function(){
+  var code = norm($('nCode').value), desc = norm($('nDesc').value), upc = parseFloat($('nUpc').value) || 0;
+  if(!code && !desc){ alert('Type at least an item code or a description.'); return; }
+  if(!code) code = 'NEW-' + linkCode;
+  if(byCode[code.toUpperCase()]){ alert('Item code ' + code + ' is already in the list. Pick it from the search instead.'); return; }
+  var it = {code:code, desc:(desc || '(new item)') + ' [NEW]', bu:'', bc:'', upc:upc, uom:'UNIT'};
+  master.push(it);
+  queue('item', {company:session.company, code:code, description:it.desc, units_per_carton:upc || null, c40_uom:'UNIT', is_new:true});
+  linkTo(it);
+};
+
+/* stock take events */
+$('btnAddTeam').onclick = function(){ teamRow(null); };
+$('btnClearTake').onclick = clearTakeForm;
+$('btnSaveTake').onclick = function(){
+  var name = norm($('pName').value), loc = norm($('pLocation').value), date = $('pDate').value;
+  if(!name || !loc || !date){ alert('Fill the stock take name, location and date.'); return; }
+  var teams = [];
+  $('teamBody').querySelectorAll('tr').forEach(function(tr){
+    var tn = norm(tr.querySelector('.tName').value), mem = splitList(tr.querySelector('.tMembers').value), bins = splitList(tr.querySelector('.tBins').value);
+    if(tn || mem.length || bins.length) teams.push({name: tn || ('Team ' + (teams.length + 1)), members: mem, bins: bins});
+  });
+  if(!teams.length){ alert('Add at least one team.'); return; }
+  var p = {id: 'ST' + Date.now().toString(36).toUpperCase(), name:name, company:$('pCompany').value, location:loc, date:date, teams:teams, created:new Date().toISOString().slice(0,16).replace('T',' ')};
+  if(CLOUD) p.cloud = true;
+  addProject(p, true); clearTakeForm(); renderTakes(); renderSession();
+  if(CLOUD){
+    queue('take', {take:{id:p.id, name:p.name, company:p.company, location:p.location, count_date:p.date, status:'open'},
+      teams:p.teams.map(function(t){ return {stock_take_id:p.id, name:t.name, members:t.members, bins:t.bins}; })});
+    refreshProgress();
+    alertMsg('takeMsg', 'Saved and opened "' + p.name + '". Counters see it in Stock takes after they sign in (no plan file needed). Without internet, use Export plan.', true);
+  } else
+  alertMsg('takeMsg', 'Saved and opened "' + p.name + '". Now press Export plan and send the file to the counters.', true);
+};
+$('btnQuick').onclick = function(){ useProject(''); renderTakes(); renderSession(); renderLines(); alertMsg('takeMsg','Quick count (no stock take) is open.', true); };
+$('filePlan').onchange = function(){
+  var f = this.files[0]; if(!f) return; var r = new FileReader(), inp = this;
+  r.onload = function(){
+    try{ importPlan(r.result, 'takeMsg'); }
+    catch(e){ alertMsg('takeMsg','Could not read this file: ' + e.message, false); }
+    inp.value = '';
+  };
+  r.readAsText(f);
+};
+
+/* sign-in events */
+$('loginForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  if(CLOUD){ cloudSignIn($('lUser').value, $('lPass').value); return; }
+  var u = findUser($('lUser').value), pw = $('lPass').value;
+  if(!u || hashPw(u.salt, pw) !== u.hash){ $('lPass').value = ''; alertMsg('loginMsg', 'Wrong username or password.', false); return; }
+  signIn(u);
+});
+$('setupForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  var n = norm($('aName').value), un = norm($('aUser').value), p1 = $('aPass').value, p2 = $('aPass2').value;
+  if(!n || !un){ alertMsg('loginMsg', 'Fill your name and a username.', false); return; }
+  if(p1.length < 6){ alertMsg('loginMsg', 'The password needs at least 6 characters.', false); return; }
+  if(p1 !== p2){ alertMsg('loginMsg', 'The two passwords are not the same.', false); return; }
+  var u = setUser(n, un, 'admin', p1); $('aPass').value = ''; $('aPass2').value = '';
+  signIn(u);
+});
+$('loginPlan').onchange = function(){
+  var f = this.files[0]; if(!f) return; var r = new FileReader(), inp = this;
+  r.onload = function(){
+    try{ importPlan(r.result, 'loginMsg'); showLogin('Plan loaded. Sign in with the username and password the count lead gave you.', true); }
+    catch(e){ alertMsg('loginMsg', 'Could not read this file: ' + e.message, false); }
+    inp.value = '';
+  };
+  r.readAsText(f);
+};
+$('btnLogout').onclick = function(){
+  if(CLOUD && me){
+    var n = myOutbox().length;
+    if(n && !confirm(n + ' change(s) are not sent yet. They stay on this phone and go when you sign in again. Log out?')) return;
+    if(progChan){ sb.removeChannel(progChan); progChan = null; progPid = ''; }
+    if(sb) sb.auth.signOut().catch(function(){});
+    cloudUsers = []; needSignIn = false;
+  }
+  showLogin('Signed out.', true);
+};
+$('hdrSync').onclick = function(){
+  if(!CLOUD || !me) return;
+  if(needSignIn && navigator.onLine !== false){
+    var un = me.username; showLogin('Sign in again so this phone can send its counted lines.', true); $('lUser').value = un; $('lPass').focus(); return;
+  }
+  if(failed.length && confirm(failed.length + ' change(s) were refused by the database:\n' +
+      failed.slice(-5).map(function(o){ return o.k + ': ' + o.err; }).join('\n') + '\n\nSend them again? (Cancel keeps them aside.)')){
+    outbox = outbox.concat(failed); failed = []; save('isc_outbox', outbox); save('isc_outbox_failed', failed);
+  }
+  syncNow().then(pullAll);
+};
+$('btnPushItems').onclick = pushItems;
+$('btnPullItems').onclick = function(){
+  if(!sb || needSignIn){ alertMsg('cloudMsg', 'Sign in online first.', false); return; }
+  var c = $('cCompany').value; alertMsg('cloudMsg', 'Downloading...', true);
+  pullItems(c).then(function(n){ alertMsg('cloudMsg', n ? 'Downloaded ' + n + ' ' + c + ' items with their barcodes.' : 'No ' + c + ' items in the cloud yet.', !!n); })
+    .catch(function(e){ alertMsg('cloudMsg', 'Could not download: ' + (e.message || e), false); });
+};
+$('btnSyncNow').onclick = function(){
+  syncNow().then(pullAll).then(function(){ alertMsg('cloudMsg', myOutbox().length ? myOutbox().length + ' change(s) still waiting (no internet?).' : 'All changes on this phone are sent.', !myOutbox().length); });
+};
+$('btnProg').onclick = refreshProgress;
+$('btnCloudLines').onclick = exportCloudLines;
+$('btnCloseTake').onclick = function(){
+  var p = project(); if(!p || !p.cloud || !sb) return;
+  if(!confirm('Close "' + p.name + '"? Phones cannot send new lines to it after this. Make sure every phone shows "Synced" first.')) return;
+  sb.from('stock_takes').update({status:'closed'}).eq('id', p.id).then(function(r){
+    if(r.error){ alertMsg('takeMsg', 'Could not close: ' + r.error.message, false); return; }
+    p.closed = true; save('isc_projects', projects); renderTakes(); refreshProgress();
+    alertMsg('takeMsg', '"' + p.name + '" is closed. Use "Download all counted lines" for the variance report.', true);
+  });
+};
+$('btnAddUser').onclick = function(){
+  if(!me || me.role !== 'admin') return;
+  var n = norm($('uName').value), un = norm($('uUser').value).toLowerCase(), role = $('uRole').value, pw = $('uPass').value;
+  if(!n || !un){ alertMsg('userMsg', 'Fill the name and username.', false); return; }
+  if(!/^[a-z0-9._-]{3,30}$/.test(un)){ alertMsg('userMsg', 'Username: 3 to 30 letters, numbers, dot, dash or underscore.', false); return; }
+  if(CLOUD){
+    if(!sb || needSignIn || navigator.onLine === false){ alertMsg('userMsg', 'Users can be managed only when online.', false); return; }
+    var ex = cloudUsers.filter(function(x){ return x.username === un; })[0];
+    if((!ex || pw) && pw.length < 6){ alertMsg('userMsg', ex ? 'A new password needs at least 6 characters (leave it blank to keep the old one).' : 'The password needs at least 6 characters.', false); return; }
+    if(ex && ex.id === me.id && role !== 'admin'){ alertMsg('userMsg', 'You cannot remove your own Admin role.', false); return; }
+    if(ex && !confirm('User ' + un + ' already exists. Change the role' + (pw ? ' and the password' : '') + '?')) return;
+    alertMsg('userMsg', 'Saving...', true);
+    (ex ? adminCall({action:'set_role', id:ex.id, role:role}).then(function(){ return pw ? adminCall({action:'set_password', id:ex.id, password:pw}) : 0; })
+        : adminCall({action:'create', username:un, full_name:n, role:role, password:pw}))
+      .then(function(){
+        $('uName').value = ''; $('uUser').value = ''; $('uPass').value = '';
+        alertMsg('userMsg', (ex ? 'Updated ' : 'Added ') + un + ' (' + ROLE[role] + '). They sign in with this username and password on any phone.', true);
+        loadCloudUsers();
+      }).catch(function(e){ alertMsg('userMsg', e.message, false); });
+    return;
+  }
+  if(pw.length < 6){ alertMsg('userMsg', 'The password needs at least 6 characters.', false); return; }
+  var existing = findUser(un);
+  if(existing && !confirm('User ' + un + ' already exists. Replace the name, role and password?')) return;
+  if(existing && existing.username === me.username && role !== 'admin'){ alertMsg('userMsg', 'You cannot remove your own Admin role.', false); return; }
+  setUser(n, un, role, pw); $('uName').value = ''; $('uUser').value = ''; $('uPass').value = '';
+  renderUsers(); alertMsg('userMsg', (existing ? 'Updated ' : 'Added ') + un + ' (' + ROLE[role] + '). Export the plan again so the other devices get it.', true);
+};
+
+document.addEventListener('click', function(e){
+  var t = e.target, v;
+  if((v = t.getAttribute('data-linkpick'))){ linkTo(byCode[v.toUpperCase()]); return; }
+  if((v = t.getAttribute('data-pick'))){ openEntry(byCode[v.toUpperCase()], 'U'); $('search').value=''; $('searchRes').innerHTML=''; }
+  if((v = t.getAttribute('data-del'))){ if(confirm('Delete this line?')){
+    lines.forEach(function(l){ if(String(l.id) === v && session){ l.deleted = true; queue('line', lineRow(l, session)); } });
+    lines = lines.filter(function(l){ return String(l.id)!==v; }); save(K.lines, lines); renderLines(); } }
+  if((v = t.getAttribute('data-active'))){
+    var on = t.getAttribute('data-on') === '1';
+    if(!me || me.role !== 'admin' || !sb) return;
+    if(!on && !confirm('Switch off this user? They cannot sign in until you switch them on again.')) return;
+    adminCall({action:'set_role', id:v, active:on}).then(loadCloudUsers).catch(function(err){ alertMsg('userMsg', err.message, false); });
+  }
+  if((v = t.getAttribute('data-link')) !== null && v !== ''){
+    var i = +v, code = norm($('lk'+i).value).toUpperCase(), it = byCode[code];
+    if(!it){ alert('Item code '+code+' is not in the item master.'); return; }
+    var f = $('lt'+i).value==='C' ? 'bc' : 'bu';
+    it[f] = it[f] ? it[f] + '|' + unknown[i].barcode : unknown[i].barcode;
+    queueLink(unknown[i].barcode, it, f === 'bc' ? 'C' : 'U');
+    save(K.master, master); rebuildIndex(); unknown.splice(i,1); save(K.unk, unknown); renderLines();
+  }
+  if(t.getAttribute('data-rmteam')){ var tr = t.closest('tr'); if(tr) tr.remove(); }
+  if((v = t.getAttribute('data-rmuser'))){
+    if(!me || me.role !== 'admin' || v === me.username) return;
+    if(!confirm('Remove user ' + v + '?')) return;
+    users = users.filter(function(x){ return x.username !== v; }); save('isc_users', users); renderUsers();
+  }
+  if((v = t.getAttribute('data-openp'))){
+    useProject(v); renderTakes(); renderSession(); renderLines(); alertMsg('takeMsg','Opened. Go to Count.', true);
+    if(CLOUD){ refreshProgress(); var pc = project().company;
+      if(sb && !needSignIn && pc !== load('isc_master_company', '')) pullItems(pc).catch(function(){}); }
+  }
+  if((v = t.getAttribute('data-expp'))){
+    var p = projects.filter(function(x){ return x.id === v; })[0];
+    if(p) download(safeName('Stock Take Plan - ' + p.name + ' ' + p.company + ' ' + p.location) + '.json', JSON.stringify(planOf(p)), 'application/json');
+  }
+  if((v = t.getAttribute('data-delp'))){
+    var n = linesFor(v);
+    if(!confirm('Remove this stock take from this device?' + (n ? ' Its ' + n + ' counted lines here are deleted too. Export them first.' : ''))) return;
+    projects = projects.filter(function(x){ return x.id !== v; }); save('isc_projects', projects);
+    ['session','lines','unknown'].forEach(function(s){ try{ localStorage.removeItem('isc_p_' + v + '_' + s); }catch(err){} });
+    if(activePid === v) useProject('');
+    renderTakes(); renderSession(); renderLines();
+  }
+});
+$('btnExport').onclick = function(){ if(!session) return; download(fileName(), countCSV()); };
+$('btnCopy').onclick = function(){ if(!session) return; var b=$('copyBox'); b.value = countCSV(); b.classList.remove('hide'); b.select();
+  if(navigator.clipboard) navigator.clipboard.writeText(b.value).catch(function(){}); };
+$('btnFinish').onclick = function(){
+  if(!session) return;
+  var wait = myOutbox().length;
+  if(!confirm((wait ? wait + ' change(s) are not sent to the cloud yet; they stay in the outbox and go later. ' : '') +
+    (CLOUD ? 'This clears the counted lines of this count on this phone (the cloud keeps them).' : 'Did you export the count file? This clears the counted lines of this count on this device.'))) return;
+  session = null; lines = []; unknown = []; save(K.session, null); save(K.lines, []); save(K.unk, []); renderSession(); renderLines(); showTab('count');
+};
+$('fileMaster').onchange = function(){
+  var f = this.files[0]; if(!f) return; var r = new FileReader();
+  r.onload = function(){ var m = importMaster(r.result); alertMsg('masterMsg', m, m.indexOf('Loaded')===0); };
+  r.readAsText(f);
+};
+$('btnExportMaster').onclick = function(){
+  var rows = [['ItemCode','Description','UnitBarcode','CartonBarcode','UnitsPerCarton','C40UOM']];
+  master.forEach(function(it){ rows.push([it.code, it.desc, it.bu, it.bc, it.upc||'', it.uom]); });
+  download('item_master.csv', toCSV(rows));
+};
+$('camSupport').textContent = camSupported() ? 'This browser can scan barcodes with the camera.' : 'This browser cannot scan with the camera (works in Chrome on Android). The USB / Bluetooth scanner works everywhere.';
+clearTakeForm();
+$('loginLogo').src = document.querySelector('.brand .mark img').src;
+rebuildIndex(); renderSession(); renderLines(); renderTakes(); renderUsers();
+// stay signed in on this device until "Log out"
+updateSyncChip();
+if(CLOUD){
+  $('cloudCard').classList.remove('hide');
+  $('cCompany').value = load('isc_master_company', '') || (SEED && SEED.company) || 'DIS';
+  $('uPass').placeholder = 'blank = keep (existing user)';
+  if(!ensureClient()) loadLib();
+  var savedC = load('isc_me_cloud', null);
+  if(savedC && savedC.id){ me = savedC; applyRole(); renderUsers(); if(session) focusScan(); cloudStart(); }
+  else showLogin();
+  window.addEventListener('online', function(){ if(!ensureClient()) loadLib(); else if(me) cloudStart(); });
+  window.addEventListener('offline', updateSyncChip);
+  setInterval(function(){ if(me && myOutbox().length) syncNow(); }, 60000);
+} else {
+  var saved = findUser(load('isc_me', ''));
+  if(saved){ me = saved; applyRole(); renderUsers(); if(session) focusScan(); }
+  else showLogin();
+}
+})();
+</script>
+<script>
+// offline support: works when served over https (GitHub Pages) or localhost
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(function(){});
+}
+</script>
+<!-- web build 20261027-1943 --></body>
+</html>

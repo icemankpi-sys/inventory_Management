@@ -1,0 +1,22 @@
+{
+    "name":  "Iceman Stock Counting System",
+    "short_name":  "Iceman Stock",
+    "start_url":  "./",
+    "scope":  "./",
+    "display":  "standalone",
+    "background_color":  "#ffffff",
+    "theme_color":  "#1d1f63",
+    "orientation":  "portrait",
+    "icons":  [
+                  {
+                      "type":  "image/png",
+                      "sizes":  "192x192",
+                      "src":  "icon-192.png"
+                  },
+                  {
+                      "type":  "image/png",
+                      "sizes":  "512x512",
+                      "src":  "icon-512.png"
+                  }
+              ]
+}
