@@ -151,6 +151,7 @@ video{width:100%;max-height:320px;background:#000;border-radius:12px;display:non
 .login-card button{width:100%;margin-top:16px}
 .login-alt{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
 .login-foot{color:#d6d8ff;font-size:12px;text-align:center;margin-top:14px}
+.login-credit{color:#d6d8ff;opacity:.75;font-size:11px;text-align:center;margin-top:6px;letter-spacing:.3px}
 header .who{display:flex;align-items:center;gap:6px}
 header button.small{background:transparent;color:var(--head-ink);border:1px solid rgba(255,255,255,.25);min-height:30px}
 body.role-counter .need-lead{display:none !important}
@@ -212,6 +213,7 @@ body:not(.role-admin) .need-admin{display:none !important}
       </div>
     </div>
     <div class="login-foot">Accounts are kept on this device. Ask the count lead if you cannot sign in.</div>
+    <div class="login-credit">System developed by Oshan Priyamal</div>
   </div>
 </div>
 <main>
@@ -613,9 +615,7 @@ function showLogin(msg, ok){
   me = null; save('isc_me', ''); save('isc_me_cloud', null); applyRole();
   var first = !CLOUD && !users.length;
   document.querySelector('.login-alt').classList.toggle('hide', CLOUD);
-  document.querySelector('.login-foot').textContent = CLOUD
-    ? 'Accounts are made by the Admin. After the first sign-in on this phone you can also sign in without internet.'
-    : 'Accounts are kept on this device. Ask the count lead if you cannot sign in.';
+  document.querySelector('.login-foot').classList.toggle('hide', CLOUD);
   $('loginForm').classList.toggle('hide', first); $('setupForm').classList.toggle('hide', !first);
   $('loginHint').textContent = first ? 'First-time setup on this device' : 'Sign in to continue';
   $('loginMsg').innerHTML = ''; if(msg) alertMsg('loginMsg', msg, ok);
@@ -1402,5 +1402,5 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(function(){});
 }
 </script>
-<!-- web build 20261027-1943 --></body>
+<!-- web build 20261027-2008 --></body>
 </html>
