@@ -205,6 +205,32 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
 .chartwrap .ln{stroke:var(--primary);stroke-width:2;fill:none}
 .chartwrap .dot{fill:var(--primary);stroke:var(--surface);stroke-width:2}
 .chartwrap .guide{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+#printArea{display:none}
+@media print{
+  @page{size:A4 portrait;margin:12mm}
+  body{background:#fff !important;color:#111 !important}
+  body > header, main, #loginScreen, #tip{display:none !important}
+  #printArea{display:block}
+  #printArea *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .rp{font:10.5px/1.4 "Segoe UI",Arial,sans-serif;color:#111}
+  .rp-head{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #2e3192;padding-bottom:6px;margin-bottom:8px}
+  .rp-head img{height:42px}
+  .rp h1{font-size:17px;margin:0;color:#1d1f63}
+  .rp h2{font-size:13px;margin:14px 0 5px;color:#1d1f63}
+  .rp .meta{font-size:10.5px;color:#334155}
+  .rp-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+  .rp-tiles div{background:#eef0fb;border-radius:6px;padding:6px 8px}
+  .rp-tiles b{display:block;font-size:15px;color:#1d1f63}
+  .rp table{width:100%;border-collapse:collapse;font-size:10px}
+  .rp th{background:#1d1f63;color:#fff;text-align:left;padding:4px 5px}
+  .rp td{border-bottom:1px solid #ddd;padding:3px 5px}
+  .rp td.n,.rp th.n{text-align:right}
+  .rp tfoot td{font-weight:700;background:#eef0fb}
+  .rp thead{display:table-header-group}
+  .rp tr{break-inside:avoid}
+  .rp .sig{display:flex;justify-content:space-between;margin-top:28px}
+  .rp .note{font-size:9.5px;color:#64748b;margin-top:6px}
+}
 .tip{position:fixed;z-index:200;background:var(--ink);color:var(--surface);font-size:12px;line-height:1.4;padding:6px 9px;border-radius:8px;pointer-events:none;max-width:260px;box-shadow:var(--shadow)}
 @media (max-width:720px){.cal .d{min-height:56px;padding:3px}.cal .ev{font-size:10px;padding:1px 3px}.tabs button{font-size:10px}}
 </style>
@@ -323,6 +349,8 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
       <div class="btns">
         <button class="acc" id="tdCount" type="button">Count in this stock take</button>
         <button class="sec" id="tdEdit" type="button">Edit / people</button>
+        <button class="sec" id="tdRepPdf" type="button">Report (PDF)</button>
+        <button class="sec" id="tdRepXlsx" type="button">Report (Excel)</button>
         <button class="sec" id="tdCsv" type="button">Download all counted lines (CSV)</button>
         <button class="sec" id="tdClose" type="button">Close stock take</button>
         <button class="sec" id="tdBack" type="button">Back to list</button>
@@ -603,6 +631,7 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
 </main>
 
 <div id="tip" class="tip hide"></div>
+<div id="printArea"></div>
 
 <!-- cloud database (Supabase). If the library is missing (first open without internet) it is loaded when the phone is online -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -1278,6 +1307,97 @@ function exportCloudLines(){
     alertMsg('tdMsg', 'Downloaded ' + res[0].length + ' lines and ' + res[1].length + ' unknown barcodes from all phones. Put only this file in Count Files for New-StockCountReport.', true);
   }).catch(function(e){ alertMsg('tdMsg', 'Could not download: ' + errText(e), false); });
 }
+/* stock take report: PDF (print window) and Excel, built from the cloud data of all phones */
+function loadXlsx(){
+  if(window.XLSX) return Promise.resolve();
+  return new Promise(function(res, rej){
+    var s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = function(){ res(); }; s.onerror = function(){ s.remove(); rej(new Error('The Excel library could not load (internet needed).')); };
+    document.head.appendChild(s);
+  });
+}
+function reportData(t){
+  return Promise.all([
+    pageAll('count_lines', '*', function(q){ return q.eq('stock_take_id', t.id).eq('deleted', false).order('scanned_at'); }),
+    pageAll('unknown_barcodes', '*', function(q){ return q.eq('stock_take_id', t.id).order('scanned_at'); }),
+    sb.from('v_counter_perf').select('*').eq('stock_take_id', t.id)
+  ]).then(function(r){
+    check(r[2]);
+    var lines = r[0], unk = r[1], prod = {}, bins = {}, users = {}, binSet = {}, first = null, last = null, units = 0, noTotal = 0;
+    lines.forEach(function(l){
+      var p = prod[l.item_code] = prod[l.item_code] || {code:l.item_code, desc:l.description || '', cartons:0, loose:0, units:0, lines:0, ctnLines:0, noTotal:0, upc:{}, bins:{}};
+      p.cartons += +l.cartons || 0; p.loose += +l.loose || 0; p.lines++;
+      if(l.pack === 'C') p.ctnLines++;
+      if(l.units_per_carton) p.upc[l.units_per_carton] = 1;
+      if(l.bin) p.bins[l.bin] = 1;
+      if(l.total_units == null){ p.noTotal++; noTotal++; } else { p.units += +l.total_units; units += +l.total_units; }
+      var bk = (l.team || '-') + '|' + (l.bin || '(no rack)'), b = bins[bk] = bins[bk] || {team:l.team || '-', bin:l.bin || '(no rack)', lines:0, units:0, users:{}, items:{}};
+      b.lines++; b.units += +l.total_units || 0; b.users[l.user_id] = 1; b.items[l.item_code] = 1;
+      users[l.user_id] = l.counter_name; if(l.bin) binSet[l.bin] = 1;
+      if(l.scanned_at){ if(!first || l.scanned_at < first) first = l.scanned_at; if(!last || l.scanned_at > last) last = l.scanned_at; }
+    });
+    var planned = []; teamsOf(t.id).forEach(function(tm){ (tm.bins || []).forEach(function(b){ if(planned.indexOf(b) < 0) planned.push(b); }); });
+    var perf = r[2].data.map(function(x){
+      var span = +x.span_min || 0, rest = +x.rest_min || 0, work = Math.max(0, span - rest);
+      return {name:nameOf(x.user_id) || x.counter_name, team:x.team || '', lines:+x.lines, units:+x.units, first:x.first_scan, last:x.last_scan, work:work, rest:rest, breaks:+x.breaks || 0, cartons:+x.carton_lines || 0, lph:work >= 1 ? Math.round(x.lines / (work / 60)) : null};
+    }).sort(function(a, b){ return (b.lph || 0) - (a.lph || 0); });
+    var products = Object.keys(prod).sort().map(function(k){ var p = prod[k]; p.upcList = Object.keys(p.upc).join(' / '); p.binList = Object.keys(p.bins).sort().join(', '); return p; });
+    var binRows = Object.keys(bins).sort().map(function(k){ var b = bins[k]; b.counters = Object.keys(b.users).length; b.itemCount = Object.keys(b.items).length; return b; });
+    return {t:t, lines:lines, unk:unk, perf:perf, products:products, bins:binRows, planned:planned, left:planned.filter(function(b){ return !binSet[b]; }),
+      kpi:{lines:lines.length, units:units, items:products.length, counters:Object.keys(users).length, racks:Object.keys(binSet).length, planned:planned.length, first:first, last:last,
+        hours:first && last ? (new Date(last) - new Date(first)) / 3600000 : 0, unknown:unk.length, noTotal:noTotal}};
+  });
+}
+function nf(v, d){ return v == null || v === '' ? '' : Number(v).toLocaleString('en-US', {minimumFractionDigits:d || 0, maximumFractionDigits:d || 0}); }
+function reportPdf(){
+  var t = takeById(detailId); if(!t || !online()){ alertMsg('tdMsg', 'The report needs internet.', false); return; }
+  alertMsg('tdMsg', 'Building the report...', true);
+  reportData(t).then(function(R){
+    var k = R.kpi, logo = document.querySelector('.brand .mark img').src;
+    var h = '<div class="rp"><div class="rp-head"><div><h1>Stock Take Report: ' + esc(t.name) + '</h1><div class="meta">' + esc(placeOf(t)) + ' · ' + esc(t.company) + ' · Count date ' + esc(fmtDate(t.count_date)) + ' · Status ' + esc(t.status) +
+      ' · Created by ' + esc(nameOf(t.created_by) || '-') + '<br>Report made ' + esc(fmtWhen(new Date().toISOString())) + ' by ' + esc(me.name) + (t.status === 'open' ? ' · <b>Stock take still open: figures can change</b>' : '') + '</div></div><img src="' + logo + '" alt=""></div>';
+    h += '<div class="rp-tiles">' + [[nf(k.lines), 'Lines counted'], [nf(k.units), 'Units counted'], [nf(k.items), 'Products'], [nf(k.counters), 'Counters'],
+      [k.racks + (k.planned ? ' / ' + k.planned : ''), 'Racks counted' + (k.planned ? ' / planned' : '')], [k.hours ? mins(k.hours * 60) : '-', 'Count time (first to last scan)'], [nf(k.unknown), 'Unknown barcodes'], [nf(k.noTotal), 'Lines without total']]
+      .map(function(x){ return '<div><b>' + esc(x[0]) + '</b>' + esc(x[1]) + '</div>'; }).join('') + '</div>';
+    if(R.left.length) h += '<div class="note">Racks with no lines: ' + esc(R.left.join(', ')) + '</div>';
+    h += '<h2>Product summary</h2><table><thead><tr><th>Item code</th><th>Description</th><th class="n">Cartons</th><th class="n">Pcs / carton</th><th class="n">Loose</th><th class="n">Total units</th><th class="n">Lines</th><th>Racks</th></tr></thead><tbody>' +
+      R.products.map(function(p){ return '<tr><td>' + esc(p.code) + '</td><td>' + esc(p.desc) + '</td><td class="n">' + nf(p.cartons) + '</td><td class="n">' + esc(p.upcList) + '</td><td class="n">' + nf(p.loose) + '</td><td class="n">' + nf(p.units) + (p.noTotal ? ' *' : '') + '</td><td class="n">' + p.lines + '</td><td>' + esc(p.binList) + '</td></tr>'; }).join('') +
+      '</tbody><tfoot><tr><td colspan="2">Total (' + R.products.length + ' products)</td><td class="n">' + nf(R.products.reduce(function(a, p){ return a + p.cartons; }, 0)) + '</td><td></td><td class="n">' + nf(R.products.reduce(function(a, p){ return a + p.loose; }, 0)) + '</td><td class="n">' + nf(k.units) + '</td><td class="n">' + k.lines + '</td><td></td></tr></tfoot></table>' +
+      (k.noTotal ? '<div class="note">* some lines of this product have no total (pieces per carton not known).</div>' : '');
+    h += '<h2>By team and rack</h2><table><thead><tr><th>Team</th><th>Rack / bin</th><th class="n">Products</th><th class="n">Lines</th><th class="n">Units</th><th class="n">Counters</th></tr></thead><tbody>' +
+      R.bins.map(function(b){ return '<tr><td>' + esc(b.team) + '</td><td>' + esc(b.bin) + '</td><td class="n">' + b.itemCount + '</td><td class="n">' + b.lines + '</td><td class="n">' + nf(b.units) + '</td><td class="n">' + b.counters + '</td></tr>'; }).join('') + '</tbody></table>';
+    h += '<h2>Counter performance</h2><table><thead><tr><th>Counter</th><th>Team</th><th class="n">Lines</th><th class="n">Units</th><th>First</th><th>Last</th><th class="n">Counting</th><th class="n">Rest</th><th class="n">Breaks</th><th class="n">Lines / hour</th></tr></thead><tbody>' +
+      R.perf.map(function(x){ return '<tr><td>' + esc(x.name) + '</td><td>' + esc(x.team) + '</td><td class="n">' + x.lines + '</td><td class="n">' + nf(x.units) + '</td><td>' + esc(fmtTime(x.first)) + '</td><td>' + esc(fmtTime(x.last)) + '</td><td class="n">' + mins(x.work) + '</td><td class="n">' + mins(x.rest) + '</td><td class="n">' + x.breaks + '</td><td class="n">' + (x.lph == null ? '' : x.lph) + '</td></tr>'; }).join('') + '</tbody></table>';
+    if(R.unk.length) h += '<h2>Unknown barcodes (not in the item list)</h2><table><thead><tr><th>Barcode</th><th>Counter</th><th>Time</th></tr></thead><tbody>' +
+      R.unk.map(function(u){ return '<tr><td>' + esc(u.barcode) + '</td><td>' + esc(nameOf(u.user_id)) + '</td><td>' + esc(fmtWhen(u.scanned_at)) + '</td></tr>'; }).join('') + '</tbody></table>';
+    h += '<div class="note">Blind count: C40 system quantities are not part of this report. Variance against C40 comes from New-StockCountReport.ps1 with the "Download all counted lines" file.</div>';
+    h += '<div class="sig"><span>Count lead: ..............................</span><span>Checked by: ..............................</span><span>Approved by: ..............................</span></div></div>';
+    $('printArea').innerHTML = h; clearMsg('tdMsg');
+    setTimeout(function(){ window.print(); }, 100);
+  }).catch(function(e){ alertMsg('tdMsg', 'Could not build the report: ' + errText(e), false); });
+}
+function reportXlsx(){
+  var t = takeById(detailId); if(!t || !online()){ alertMsg('tdMsg', 'The report needs internet.', false); return; }
+  alertMsg('tdMsg', 'Building the Excel report...', true);
+  Promise.all([reportData(t), loadXlsx()]).then(function(res){
+    var R = res[0], k = R.kpi, wb = XLSX.utils.book_new();
+    var add = function(name, aoa, widths){ var ws = XLSX.utils.aoa_to_sheet(aoa); if(widths) ws['!cols'] = widths.map(function(w){ return {wch:w}; }); XLSX.utils.book_append_sheet(wb, ws, name); return ws; };
+    add('Summary', [['Stock take report'], [], ['Stock take', t.name], ['Company', t.company], ['Operation / location', placeOf(t)], ['Count date', t.count_date], ['Status', t.status], ['Created by', nameOf(t.created_by) || ''],
+      ['Report made', new Date().toLocaleString('en-GB') + ' by ' + me.name], [], ['Lines counted', k.lines], ['Units counted', k.units], ['Products', k.items], ['Counters', k.counters], ['Racks counted', k.racks], ['Racks planned', k.planned],
+      ['Racks with no lines', R.left.join(', ')], ['Count time (hours, first to last scan)', Math.round(k.hours * 10) / 10], ['Unknown barcodes', k.unknown], ['Lines without total', k.noTotal]], [36, 50]);
+    add('Products', [['Item code', 'Description', 'Cartons', 'Pcs per carton', 'Loose', 'Total units', 'Lines', 'Lines counted as cartons', 'Lines without total', 'Racks']].concat(
+      R.products.map(function(p){ return [p.code, p.desc, p.cartons, p.upcList, p.loose, p.units, p.lines, p.ctnLines, p.noTotal, p.binList]; })), [14, 36, 10, 12, 10, 12, 8, 10, 10, 40]);
+    add('Teams and racks', [['Team', 'Rack / bin', 'Products', 'Lines', 'Units', 'Counters']].concat(R.bins.map(function(b){ return [b.team, b.bin, b.itemCount, b.lines, b.units, b.counters]; })), [14, 16, 10, 10, 12, 10]);
+    add('Counters', [['Counter', 'Team', 'Lines', 'Units', 'First scan', 'Last scan', 'Counting (min)', 'Rest (min)', 'Breaks', 'Carton lines', 'Lines per hour']].concat(
+      R.perf.map(function(x){ return [x.name, x.team, x.lines, x.units, fmtWhen(x.first), fmtWhen(x.last), Math.round(x.work), Math.round(x.rest), x.breaks, x.cartons, x.lph]; })), [22, 12, 8, 10, 16, 16, 12, 10, 8, 10, 12]);
+    add('Unknown barcodes', [['Barcode', 'Counter', 'Time']].concat(R.unk.map(function(u){ return [String(u.barcode), nameOf(u.user_id), fmtWhen(u.scanned_at)]; })), [18, 22, 18]);
+    add('All lines', [['Item code', 'Description', 'Counted as', 'Cartons', 'Pcs per carton', 'Loose', 'Total units', 'Expiry', 'Lot', 'Team', 'Rack', 'Counter', 'Scan time']].concat(
+      R.lines.map(function(l){ return [l.item_code, l.description, l.pack === 'C' ? 'Carton' : 'Item', +l.cartons || 0, l.units_per_carton || '', +l.loose || 0, l.total_units, l.expiry || '', l.lot || '', l.team || '', l.bin || '', l.counter_name || '', fmtWhen(l.scanned_at)]; })),
+      [14, 32, 10, 9, 10, 9, 11, 11, 10, 10, 10, 18, 16]);
+    XLSX.writeFile(wb, safeName('Stock Take Report ' + t.name + ' ' + t.count_date) + '.xlsx');
+    alertMsg('tdMsg', 'Excel report downloaded: ' + k.items + ' products, ' + k.lines + ' lines.', true);
+  }).catch(function(e){ alertMsg('tdMsg', 'Could not build the Excel report: ' + errText(e), false); });
+}
 function toggleClose(){
   var t = takeById(detailId); if(!t || !online()){ alertMsg('tdMsg', 'This needs internet.', false); return; }
   var closing = t.status === 'open';
@@ -1848,6 +1968,8 @@ $('tdBack').onclick = function(){ detailId = ''; renderTakesPage(); };
 $('tdEdit').onclick = function(){ openEditor(takeById(detailId)); };
 $('tdCount').onclick = function(){ startCount(detailId); };
 $('tdCsv').onclick = exportCloudLines;
+$('tdRepPdf').onclick = reportPdf;
+$('tdRepXlsx').onclick = reportXlsx;
 $('tdClose').onclick = toggleClose;
 $('teOp').onchange = function(){ locOptions(this.value, ''); };
 $('teLoc').onchange = rackInfo;
@@ -1990,5 +2112,5 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(function(){});
 }
 </script>
-<!-- web build 20261027-2142 --></body>
+<!-- web build 20261028-1150 --></body>
 </html>
