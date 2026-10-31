@@ -1,5 +1,5 @@
-// Iceman Stock Counting System - offline cache (20261028-1150)
-const CACHE = 'isc-20261028-1150';
+// Iceman Stock Counting System - offline cache (20261031-1920)
+const CACHE = 'isc-20261031-1920';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
 self.addEventListener('install', e => {

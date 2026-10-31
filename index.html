@@ -983,21 +983,27 @@ function pullAll(){
 function pullItems(){
   return Promise.all([
     pageAll('items', 'company, code, description, units_per_carton, c40_uom, is_new, created_by, created_at', function(q){ return q.order('company').order('code'); }),
-    pageAll('barcode_links', 'company, barcode, item_code, pack', function(q){ return q.order('company').order('barcode'); })
+    pageAll('barcode_links', 'company, barcode, item_code, pack, created_by, created_at, linked_by_name', function(q){ return q.order('company').order('barcode'); })
+      .catch(function(){ return pageAll('barcode_links', 'company, barcode, item_code, pack', function(q){ return q.order('company').order('barcode'); }); })
   ]).then(function(res){
     var items = {CCS:[], DIS:[]}, by = {};
     res[0].forEach(function(r){
       var it = {code:r.code, desc:r.description, upc:+r.units_per_carton || 0, uom:r.c40_uom || 'UNIT', isNew:r.is_new, by:r.created_by, at:r.created_at, bu:'', bc:''};
       (items[r.company] = items[r.company] || []).push(it); by[r.company + '|' + r.code.toUpperCase()] = it;
     });
-    res[1].forEach(function(l){ var it = by[l.company + '|' + l.item_code.toUpperCase()]; if(it) addBarcode(it, l.pack, l.barcode); });
+    res[1].forEach(function(l){
+      var it = by[l.company + '|' + l.item_code.toUpperCase()]; if(!it) return;
+      addBarcode(it, l.pack, l.barcode);
+      var who = l.linked_by_name || (l.created_by ? nameOf(l.created_by) : '');
+      if(who && (!it.lk || (l.created_at || '') > (it.lk.at || ''))) it.lk = {by:who, at:l.created_at};   // latest link: who and when
+    });
     // items and links made on this phone that are still waiting to be sent
     outbox.forEach(function(o){
       if(o.k === 'item'){
         var key = o.r.company + '|' + o.r.code.toUpperCase();
         if(!by[key]){ var n = {code:o.r.code, desc:o.r.description, upc:+o.r.units_per_carton || 0, uom:'UNIT', isNew:true, by:o.uid, bu:'', bc:''}; (items[o.r.company] = items[o.r.company] || []).push(n); by[key] = n; }
       }
-      if(o.k === 'link'){ var it2 = by[o.r.company + '|' + o.r.item_code.toUpperCase()]; if(it2) addBarcode(it2, o.r.pack, o.r.barcode); }
+      if(o.k === 'link'){ var it2 = by[o.r.company + '|' + o.r.item_code.toUpperCase()]; if(it2){ addBarcode(it2, o.r.pack, o.r.barcode); if(me) it2.lk = {by:me.name, at:new Date().toISOString()}; } }
     });
     if(!res[0].length && SEED && SEED.company) items[SEED.company] = D.items[SEED.company] || [];   // nothing in the cloud yet: keep the built-in list
     D.items = items; rebuildIndex();
@@ -1685,7 +1691,7 @@ function linkSearch(){
 }
 function linkTo(it){
   var code = linkCode, pack = segVal('lkMode'), gs = linkGs, co = curTake().company;
-  addBarcode(it, pack, code); rebuildIndex(); saveCache();
+  addBarcode(it, pack, code); it.lk = {by:me.name, at:new Date().toISOString()}; rebuildIndex(); saveCache();
   queue('link', {barcode:code, company:co, item_code:it.code, pack:pack, created_by:me.id});
   closeLink(); beep(true);
   if($('cQuick').checked && (pack === 'U' || it.upc)){
@@ -1693,7 +1699,7 @@ function linkTo(it){
     return;
   }
   openEntry(it, pack, gs);
-  alertMsg('scanMsg', 'Barcode ' + code + ' linked to ' + it.code + ' (' + (pack === 'C' ? 'carton' : 'item') + '). Now type the quantity.', true);
+  alertMsg('scanMsg', 'Barcode ' + code + ' linked to ' + it.code + ' (' + (pack === 'C' ? 'carton' : 'item') + ') by ' + me.name + '. Now type the quantity.', true);
 }
 function addNewItem(){
   var co = curTake().company, desc = norm($('nDesc').value), code = norm($('nCode').value), upc = num($('nUpc').value);
@@ -1749,6 +1755,7 @@ function beep(ok){
    ITEMS AND BARCODES, HISTORY
    ===================================================================== */
 var editItem = null;
+function lkLine(it, show){ return show && it.lk && it.lk.by ? '<br><span class="mini">linked by ' + esc(it.lk.by) + (it.lk.at ? ' · ' + esc(fmtWhen(it.lk.at)) : '') + '</span>' : ''; }
 function renderItems(){
   var co = $('iCo').value, q = norm($('iSearch').value), show = $('iShow').value, all = D.items[co] || [];
   var list = q.length >= 2 ? findItems(co, q, 100000) : all.slice();
@@ -1758,7 +1765,7 @@ function renderItems(){
   $('iCount').textContent = all.length + ' ' + co + ' items · ' + withBc + ' with a barcode · ' + (all.length - withBc) + ' without' + (list.length > 300 ? ' · showing the first 300 of ' + list.length + ' (search to narrow)' : '');
   var staff = me.role !== 'counter';
   $('iBody').innerHTML = list.slice(0, 300).map(function(it){
-    return '<tr><td>' + esc(it.code) + (it.isNew ? ' <span class="tag">new</span>' : '') + '</td><td>' + esc(it.desc) + '</td><td>' + esc(split(it.bu).join(', ')) + '</td><td>' + esc(split(it.bc).join(', ')) + '</td><td class="n">' + (it.upc || '') +
+    return '<tr><td>' + esc(it.code) + (it.isNew ? ' <span class="tag">new</span>' : '') + '</td><td>' + esc(it.desc) + '</td><td>' + esc(split(it.bu).join(', ')) + lkLine(it, split(it.bu).length) + '</td><td>' + esc(split(it.bc).join(', ')) + lkLine(it, !split(it.bu).length && split(it.bc).length) + '</td><td class="n">' + (it.upc || '') +
       '</td><td class="mini">' + esc(it.by ? nameOf(it.by) : '') + (it.at ? '<br>' + esc(fmtWhen(it.at)) : '') + '</td><td class="only-staff">' + (staff ? '<button class="sec small" data-iedit="' + esc(it.code) + '" type="button">Edit</button>' : '') + '</td></tr>';
   }).join('') || '<tr><td colspan="7" class="small">' + (all.length ? 'No match.' : 'No items yet for ' + co + '. Load an item list (CSV) below.') + '</td></tr>';
 }
@@ -2112,5 +2119,5 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(function(){});
 }
 </script>
-<!-- web build 20261028-1150 --></body>
+<!-- web build 20261031-1920 --></body>
 </html>
