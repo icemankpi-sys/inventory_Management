@@ -445,6 +445,9 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
       <label>Counting by</label>
       <div class="seg" id="cMode"><button type="button" data-mode="U" class="on">Item (pieces)</button><button type="button" data-mode="C">Carton</button></div>
       <label class="small" style="display:flex;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="cQuick"> One by one: each scan adds 1 (no quantity box)</label>
+      <label style="margin-top:10px">Stock condition</label>
+      <div class="seg" id="cCond"><button type="button" data-mode="G" class="on">Good stock</button><button type="button" data-mode="D">Damaged</button></div>
+      <div id="cReasonRow" class="hide" style="margin-top:8px"><label>Damage reason (applies to the next scans)</label><select id="cReason"><option>Broken pack</option><option>Melted / thawed</option><option>Expired</option><option>Leaking</option><option>Crushed carton</option><option>Other</option></select></div>
       <div class="scanbox" style="margin-top:12px"><svg class="i"><use href="#i-scan"/></svg><input type="text" id="scan" placeholder="Scan barcode or type item code" autocomplete="off"></div>
       <div class="btns"><button class="sec" id="btnCam" type="button">Use phone camera</button></div>
       <video id="cam" playsinline muted></video>
@@ -1305,10 +1308,10 @@ function exportCloudLines(){
     pageAll('unknown_barcodes', '*', function(q){ return q.eq('stock_take_id', t.id).order('scanned_at'); })
   ]).then(function(res){
     var tm = function(v){ return v ? new Date(v).toTimeString().slice(0, 8) : ''; }, who = {};
-    var rows = [['Company','Location','CountDate','Counter','ItemCode','Description','Cartons','Loose','UnitsPerCarton','TotalUnits','Expiry','Lot','Bin','ScanTime','Barcode','CountStarted','ProjectId','ProjectName','Team','CountedAs']];
+    var rows = [['Company','Location','CountDate','Counter','ItemCode','Description','Cartons','Loose','UnitsPerCarton','TotalUnits','Expiry','Lot','Bin','ScanTime','Barcode','CountStarted','ProjectId','ProjectName','Team','CountedAs','Condition','DamageReason']];
     res[0].forEach(function(l){ who[l.user_id] = l.counter_name;
-      rows.push([l.company, l.location, t.count_date, l.counter_name, l.item_code, l.description, l.cartons, l.loose, l.units_per_carton || '', l.total_units == null ? '' : l.total_units, l.expiry || '', l.lot || '', l.bin || '', tm(l.scanned_at), '', '', t.id, t.name, l.team || '', l.pack === 'C' ? 'Carton' : 'Item']); });
-    res[1].forEach(function(u){ rows.push([t.company, t.location, t.count_date, who[u.user_id] || nameOf(u.user_id), '', 'UNKNOWN BARCODE', '', '', '', '', '', '', '', tm(u.scanned_at), u.barcode, '', t.id, t.name, '', '']); });
+      rows.push([l.company, l.location, t.count_date, l.counter_name, l.item_code, l.description, l.cartons, l.loose, l.units_per_carton || '', l.total_units == null ? '' : l.total_units, l.expiry || '', l.lot || '', l.bin || '', tm(l.scanned_at), '', '', t.id, t.name, l.team || '', l.pack === 'C' ? 'Carton' : 'Item', l.cond === 'D' ? 'Damaged' : 'Good', l.damage_reason || '']); });
+    res[1].forEach(function(u){ rows.push([t.company, t.location, t.count_date, who[u.user_id] || nameOf(u.user_id), '', 'UNKNOWN BARCODE', '', '', '', '', '', '', '', tm(u.scanned_at), u.barcode, '', t.id, t.name, '', '', '', '']); });
     download(safeName('Count ' + t.name + ' ' + t.company + ' ' + t.location + ' ' + t.count_date + ' ALL PHONES') + '.csv', toCSV(rows));
     alertMsg('tdMsg', 'Downloaded ' + res[0].length + ' lines and ' + res[1].length + ' unknown barcodes from all phones. Put only this file in Count Files for New-StockCountReport.', true);
   }).catch(function(e){ alertMsg('tdMsg', 'Could not download: ' + errText(e), false); });
@@ -1329,16 +1332,16 @@ function reportData(t){
     sb.from('v_counter_perf').select('*').eq('stock_take_id', t.id)
   ]).then(function(r){
     check(r[2]);
-    var lines = r[0], unk = r[1], prod = {}, bins = {}, users = {}, binSet = {}, first = null, last = null, units = 0, noTotal = 0;
+    var lines = r[0], unk = r[1], prod = {}, bins = {}, users = {}, binSet = {}, first = null, last = null, units = 0, dmg = 0, noTotal = 0;
     lines.forEach(function(l){
-      var p = prod[l.item_code] = prod[l.item_code] || {code:l.item_code, desc:l.description || '', cartons:0, loose:0, units:0, lines:0, ctnLines:0, noTotal:0, upc:{}, bins:{}};
+      var p = prod[l.item_code] = prod[l.item_code] || {code:l.item_code, desc:l.description || '', cartons:0, loose:0, units:0, lines:0, ctnLines:0, noTotal:0, dmg:0, dmgLines:0, upc:{}, bins:{}};
       p.cartons += +l.cartons || 0; p.loose += +l.loose || 0; p.lines++;
       if(l.pack === 'C') p.ctnLines++;
       if(l.units_per_carton) p.upc[l.units_per_carton] = 1;
       if(l.bin) p.bins[l.bin] = 1;
-      if(l.total_units == null){ p.noTotal++; noTotal++; } else { p.units += +l.total_units; units += +l.total_units; }
+      if(l.total_units == null){ p.noTotal++; noTotal++; } else if(l.cond === 'D'){ p.dmg += +l.total_units; p.dmgLines++; dmg += +l.total_units; } else { p.units += +l.total_units; units += +l.total_units; }
       var bk = (l.team || '-') + '|' + (l.bin || '(no rack)'), b = bins[bk] = bins[bk] || {team:l.team || '-', bin:l.bin || '(no rack)', lines:0, units:0, users:{}, items:{}};
-      b.lines++; b.units += +l.total_units || 0; b.users[l.user_id] = 1; b.items[l.item_code] = 1;
+      b.lines++; b.units += l.cond === 'D' ? 0 : (+l.total_units || 0); b.users[l.user_id] = 1; b.items[l.item_code] = 1;
       users[l.user_id] = l.counter_name; if(l.bin) binSet[l.bin] = 1;
       if(l.scanned_at){ if(!first || l.scanned_at < first) first = l.scanned_at; if(!last || l.scanned_at > last) last = l.scanned_at; }
     });
@@ -1349,8 +1352,8 @@ function reportData(t){
     }).sort(function(a, b){ return (b.lph || 0) - (a.lph || 0); });
     var products = Object.keys(prod).sort().map(function(k){ var p = prod[k]; p.upcList = Object.keys(p.upc).join(' / '); p.binList = Object.keys(p.bins).sort().join(', '); return p; });
     var binRows = Object.keys(bins).sort().map(function(k){ var b = bins[k]; b.counters = Object.keys(b.users).length; b.itemCount = Object.keys(b.items).length; return b; });
-    return {t:t, lines:lines, unk:unk, perf:perf, products:products, bins:binRows, planned:planned, left:planned.filter(function(b){ return !binSet[b]; }),
-      kpi:{lines:lines.length, units:units, items:products.length, counters:Object.keys(users).length, racks:Object.keys(binSet).length, planned:planned.length, first:first, last:last,
+    return {t:t, lines:lines, dmgLines:lines.filter(function(l){ return l.cond === 'D'; }), unk:unk, perf:perf, products:products, bins:binRows, planned:planned, left:planned.filter(function(b){ return !binSet[b]; }),
+      kpi:{lines:lines.length, units:units, damage:dmg, items:products.length, counters:Object.keys(users).length, racks:Object.keys(binSet).length, planned:planned.length, first:first, last:last,
         hours:first && last ? (new Date(last) - new Date(first)) / 3600000 : 0, unknown:unk.length, noTotal:noTotal}};
   });
 }
@@ -1362,14 +1365,16 @@ function reportPdf(){
     var k = R.kpi, logo = document.querySelector('.brand .mark img').src;
     var h = '<div class="rp"><div class="rp-head"><div><h1>Stock Take Report: ' + esc(t.name) + '</h1><div class="meta">' + esc(placeOf(t)) + ' · ' + esc(t.company) + ' · Count date ' + esc(fmtDate(t.count_date)) + ' · Status ' + esc(t.status) +
       ' · Created by ' + esc(nameOf(t.created_by) || '-') + '<br>Report made ' + esc(fmtWhen(new Date().toISOString())) + ' by ' + esc(me.name) + (t.status === 'open' ? ' · <b>Stock take still open: figures can change</b>' : '') + '</div></div><img src="' + logo + '" alt=""></div>';
-    h += '<div class="rp-tiles">' + [[nf(k.lines), 'Lines counted'], [nf(k.units), 'Units counted'], [nf(k.items), 'Products'], [nf(k.counters), 'Counters'],
+    h += '<div class="rp-tiles">' + [[nf(k.lines), 'Lines counted'], [nf(k.units), 'Good units counted'], [nf(k.damage), 'Damaged units'], [nf(k.items), 'Products'], [nf(k.counters), 'Counters'],
       [k.racks + (k.planned ? ' / ' + k.planned : ''), 'Racks counted' + (k.planned ? ' / planned' : '')], [k.hours ? mins(k.hours * 60) : '-', 'Count time (first to last scan)'], [nf(k.unknown), 'Unknown barcodes'], [nf(k.noTotal), 'Lines without total']]
       .map(function(x){ return '<div><b>' + esc(x[0]) + '</b>' + esc(x[1]) + '</div>'; }).join('') + '</div>';
     if(R.left.length) h += '<div class="note">Racks with no lines: ' + esc(R.left.join(', ')) + '</div>';
-    h += '<h2>Product summary</h2><table><thead><tr><th>Item code</th><th>Description</th><th class="n">Cartons</th><th class="n">Pcs / carton</th><th class="n">Loose</th><th class="n">Total units</th><th class="n">Lines</th><th>Racks</th></tr></thead><tbody>' +
-      R.products.map(function(p){ return '<tr><td>' + esc(p.code) + '</td><td>' + esc(p.desc) + '</td><td class="n">' + nf(p.cartons) + '</td><td class="n">' + esc(p.upcList) + '</td><td class="n">' + nf(p.loose) + '</td><td class="n">' + nf(p.units) + (p.noTotal ? ' *' : '') + '</td><td class="n">' + p.lines + '</td><td>' + esc(p.binList) + '</td></tr>'; }).join('') +
-      '</tbody><tfoot><tr><td colspan="2">Total (' + R.products.length + ' products)</td><td class="n">' + nf(R.products.reduce(function(a, p){ return a + p.cartons; }, 0)) + '</td><td></td><td class="n">' + nf(R.products.reduce(function(a, p){ return a + p.loose; }, 0)) + '</td><td class="n">' + nf(k.units) + '</td><td class="n">' + k.lines + '</td><td></td></tr></tfoot></table>' +
+    h += '<h2>Product summary</h2><table><thead><tr><th>Item code</th><th>Description</th><th class="n">Cartons</th><th class="n">Pcs / carton</th><th class="n">Loose</th><th class="n">Good units</th><th class="n">Damaged</th><th class="n">Lines</th><th>Racks</th></tr></thead><tbody>' +
+      R.products.map(function(p){ return '<tr><td>' + esc(p.code) + '</td><td>' + esc(p.desc) + '</td><td class="n">' + nf(p.cartons) + '</td><td class="n">' + esc(p.upcList) + '</td><td class="n">' + nf(p.loose) + '</td><td class="n">' + nf(p.units) + (p.noTotal ? ' *' : '') + '</td><td class="n">' + (p.dmg ? '<b style="color:#c62828">' + nf(p.dmg) + '</b>' : '') + '</td><td class="n">' + p.lines + '</td><td>' + esc(p.binList) + '</td></tr>'; }).join('') +
+      '</tbody><tfoot><tr><td colspan="2">Total (' + R.products.length + ' products)</td><td class="n">' + nf(R.products.reduce(function(a, p){ return a + p.cartons; }, 0)) + '</td><td></td><td class="n">' + nf(R.products.reduce(function(a, p){ return a + p.loose; }, 0)) + '</td><td class="n">' + nf(k.units) + '</td><td class="n">' + (k.damage ? nf(k.damage) : '') + '</td><td class="n">' + k.lines + '</td><td></td></tr></tfoot></table>' +
       (k.noTotal ? '<div class="note">* some lines of this product have no total (pieces per carton not known).</div>' : '');
+    if(R.dmgLines.length) h += '<h2>Damaged stock (' + nf(k.damage) + ' units)</h2><table><thead><tr><th>Item code</th><th>Description</th><th>Reason</th><th class="n">Units</th><th>Rack</th><th>Counter</th><th>Time</th></tr></thead><tbody>' +
+      R.dmgLines.map(function(l){ return '<tr><td>' + esc(l.item_code) + '</td><td>' + esc(l.description || '') + '</td><td>' + esc(l.damage_reason || '') + '</td><td class="n">' + nf(l.total_units) + '</td><td>' + esc(l.bin || '') + '</td><td>' + esc(l.counter_name || '') + '</td><td>' + esc(fmtWhen(l.scanned_at)) + '</td></tr>'; }).join('') + '</tbody></table>';
     h += '<h2>By team and rack</h2><table><thead><tr><th>Team</th><th>Rack / bin</th><th class="n">Products</th><th class="n">Lines</th><th class="n">Units</th><th class="n">Counters</th></tr></thead><tbody>' +
       R.bins.map(function(b){ return '<tr><td>' + esc(b.team) + '</td><td>' + esc(b.bin) + '</td><td class="n">' + b.itemCount + '</td><td class="n">' + b.lines + '</td><td class="n">' + nf(b.units) + '</td><td class="n">' + b.counters + '</td></tr>'; }).join('') + '</tbody></table>';
     h += '<h2>Counter performance</h2><table><thead><tr><th>Counter</th><th>Team</th><th class="n">Lines</th><th class="n">Units</th><th>First</th><th>Last</th><th class="n">Counting</th><th class="n">Rest</th><th class="n">Breaks</th><th class="n">Lines / hour</th></tr></thead><tbody>' +
@@ -1389,17 +1394,18 @@ function reportXlsx(){
     var R = res[0], k = R.kpi, wb = XLSX.utils.book_new();
     var add = function(name, aoa, widths){ var ws = XLSX.utils.aoa_to_sheet(aoa); if(widths) ws['!cols'] = widths.map(function(w){ return {wch:w}; }); XLSX.utils.book_append_sheet(wb, ws, name); return ws; };
     add('Summary', [['Stock take report'], [], ['Stock take', t.name], ['Company', t.company], ['Operation / location', placeOf(t)], ['Count date', t.count_date], ['Status', t.status], ['Created by', nameOf(t.created_by) || ''],
-      ['Report made', new Date().toLocaleString('en-GB') + ' by ' + me.name], [], ['Lines counted', k.lines], ['Units counted', k.units], ['Products', k.items], ['Counters', k.counters], ['Racks counted', k.racks], ['Racks planned', k.planned],
+      ['Report made', new Date().toLocaleString('en-GB') + ' by ' + me.name], [], ['Lines counted', k.lines], ['Good units counted', k.units], ['Damaged units', k.damage], ['Products', k.items], ['Counters', k.counters], ['Racks counted', k.racks], ['Racks planned', k.planned],
       ['Racks with no lines', R.left.join(', ')], ['Count time (hours, first to last scan)', Math.round(k.hours * 10) / 10], ['Unknown barcodes', k.unknown], ['Lines without total', k.noTotal]], [36, 50]);
-    add('Products', [['Item code', 'Description', 'Cartons', 'Pcs per carton', 'Loose', 'Total units', 'Lines', 'Lines counted as cartons', 'Lines without total', 'Racks']].concat(
-      R.products.map(function(p){ return [p.code, p.desc, p.cartons, p.upcList, p.loose, p.units, p.lines, p.ctnLines, p.noTotal, p.binList]; })), [14, 36, 10, 12, 10, 12, 8, 10, 10, 40]);
+    add('Products', [['Item code', 'Description', 'Cartons', 'Pcs per carton', 'Loose', 'Good units', 'Damaged units', 'Lines', 'Lines counted as cartons', 'Lines without total', 'Racks']].concat(
+      R.products.map(function(p){ return [p.code, p.desc, p.cartons, p.upcList, p.loose, p.units, p.dmg, p.lines, p.ctnLines, p.noTotal, p.binList]; })), [14, 36, 10, 12, 10, 12, 12, 8, 10, 10, 40]);
+    add('Damaged', [['Item code', 'Description', 'Damage reason', 'Units', 'Counted as', 'Rack', 'Team', 'Counter', 'Scan time']].concat(R.dmgLines.map(function(l){ return [l.item_code, l.description, l.damage_reason || '', l.total_units, l.pack === 'C' ? 'Carton' : 'Item', l.bin || '', l.team || '', l.counter_name || '', fmtWhen(l.scanned_at)]; })), [14, 32, 18, 10, 10, 10, 10, 18, 16]);
     add('Teams and racks', [['Team', 'Rack / bin', 'Products', 'Lines', 'Units', 'Counters']].concat(R.bins.map(function(b){ return [b.team, b.bin, b.itemCount, b.lines, b.units, b.counters]; })), [14, 16, 10, 10, 12, 10]);
     add('Counters', [['Counter', 'Team', 'Lines', 'Units', 'First scan', 'Last scan', 'Counting (min)', 'Rest (min)', 'Breaks', 'Carton lines', 'Lines per hour']].concat(
       R.perf.map(function(x){ return [x.name, x.team, x.lines, x.units, fmtWhen(x.first), fmtWhen(x.last), Math.round(x.work), Math.round(x.rest), x.breaks, x.cartons, x.lph]; })), [22, 12, 8, 10, 16, 16, 12, 10, 8, 10, 12]);
     add('Unknown barcodes', [['Barcode', 'Counter', 'Time']].concat(R.unk.map(function(u){ return [String(u.barcode), nameOf(u.user_id), fmtWhen(u.scanned_at)]; })), [18, 22, 18]);
-    add('All lines', [['Item code', 'Description', 'Counted as', 'Cartons', 'Pcs per carton', 'Loose', 'Total units', 'Expiry', 'Lot', 'Team', 'Rack', 'Counter', 'Scan time']].concat(
-      R.lines.map(function(l){ return [l.item_code, l.description, l.pack === 'C' ? 'Carton' : 'Item', +l.cartons || 0, l.units_per_carton || '', +l.loose || 0, l.total_units, l.expiry || '', l.lot || '', l.team || '', l.bin || '', l.counter_name || '', fmtWhen(l.scanned_at)]; })),
-      [14, 32, 10, 9, 10, 9, 11, 11, 10, 10, 10, 18, 16]);
+    add('All lines', [['Item code', 'Description', 'Counted as', 'Cartons', 'Pcs per carton', 'Loose', 'Total units', 'Expiry', 'Lot', 'Team', 'Rack', 'Counter', 'Scan time', 'Condition', 'Damage reason']].concat(
+      R.lines.map(function(l){ return [l.item_code, l.description, l.pack === 'C' ? 'Carton' : 'Item', +l.cartons || 0, l.units_per_carton || '', +l.loose || 0, l.total_units, l.expiry || '', l.lot || '', l.team || '', l.bin || '', l.counter_name || '', fmtWhen(l.scanned_at), l.cond === 'D' ? 'Damaged' : 'Good', l.damage_reason || '']; })),
+      [14, 32, 10, 9, 10, 9, 11, 11, 10, 10, 10, 18, 16, 10, 16]);
     XLSX.writeFile(wb, safeName('Stock Take Report ' + t.name + ' ' + t.count_date) + '.xlsx');
     alertMsg('tdMsg', 'Excel report downloaded: ' + k.items + ' products, ' + k.lines + ' lines.', true);
   }).catch(function(e){ alertMsg('tdMsg', 'Could not build the Excel report: ' + errText(e), false); });
@@ -1509,6 +1515,11 @@ var current = null, entryGs = null, linkCode = '', linkGs = null;
 function curTake(){ return S ? takeById(S.takeId) : null; }
 function segVal(id){ var b = $(id).querySelector('button.on'); return b ? b.getAttribute('data-mode') : 'U'; }
 function setSeg(id, v){ $(id).querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-mode') === v); }); }
+function showCond(){   // Good / Damaged: red scan box and the reason list while Damaged is on
+  var d = !!(S && S.cond === 'D'); $('cReasonRow').classList.toggle('hide', !d);
+  $('scan').placeholder = d ? 'DAMAGED stock: scan barcode or type item code' : 'Scan barcode or type item code';
+  var sb = document.querySelector('.scanbox'); if(sb){ sb.style.borderColor = d ? '#c62828' : ''; sb.style.background = d ? '#fdecea' : ''; }
+}
 function startCount(tid){
   var t = takeById(tid); if(!t || t.status !== 'open'){ alert('This stock take is not open.'); return; }
   var m = membersOf(t.id).filter(function(x){ return x.user_id === me.id; })[0], teams = teamsOf(t.id);
@@ -1540,6 +1551,7 @@ function renderCount(){
   var counted = {}; myLines.forEach(function(l){ if(!l.deleted) counted[l.bin] = 1; });
   $('cRacks').innerHTML = bins.length ? 'Racks: ' + bins.map(function(b){ return '<span class="tag"' + (counted[b] ? ' style="border-color:var(--ok);color:var(--ok)"' : '') + '>' + (counted[b] ? '✓ ' : '') + esc(b) + '</span>'; }).join('') : '';
   setSeg('cMode', S.mode || 'U'); $('cQuick').checked = !!S.quick;
+  setSeg('cCond', S.cond || 'G'); if(S.reason) $('cReason').value = S.reason; showCond();
   renderLines();
 }
 function focusScan(){ setTimeout(function(){ if(!current && !linkCode && page === 'count') $('scan').focus(); }, 50); }
@@ -1594,7 +1606,7 @@ function handleScan(raw){
 function openEntry(it, mode, gs){
   current = it; entryGs = gs || null;
   $('eName').textContent = it.code + '  ' + it.desc;
-  $('eInfo').textContent = (it.upc ? it.upc + ' pieces per carton' : 'Pieces per carton not set yet') + (gs ? ' · GS1 label read' : '') + (it.isNew ? ' · new item' : '');
+  $('eInfo').textContent = (it.upc ? it.upc + ' pieces per carton' : 'Pieces per carton not set yet') + (gs ? ' · GS1 label read' : '') + (it.isNew ? ' · new item' : '') + (S && S.cond === 'D' ? ' · DAMAGED (' + (S.reason || 'no reason') + ')' : '');
   $('ePcs').value = 1; $('eCtn').value = 1; $('eUpc').value = it.upc || ''; $('eLoose').value = 0;
   $('eExp').value = gs ? gs.expiry : ''; $('eLot').value = gs ? gs.lot : '';
   setEntryMode(mode);
@@ -1628,25 +1640,27 @@ function addFromEntry(){
 function addLine(it, q, expiry, lot){
   if(needBin()) return;
   var t = curTake(), ts = new Date().toISOString();
-  var l = {id:Date.now() + Math.random(), cid:newCid(), ts:ts, t:nowTime(), code:it.code, desc:it.desc, pack:q.pack, cartons:q.cartons, upc:q.upc || 0, loose:q.loose, total:q.total, expiry:expiry || '', lot:lot || '', bin:S.bin || ''};
+  var l = {id:Date.now() + Math.random(), cid:newCid(), ts:ts, t:nowTime(), code:it.code, desc:it.desc, pack:q.pack, cartons:q.cartons, upc:q.upc || 0, loose:q.loose, total:q.total, expiry:expiry || '', lot:lot || '', bin:S.bin || '', cond:(S.cond === 'D' ? 'D' : 'G'), reason:(S.cond === 'D' ? (S.reason || '') : '')};
   myLines.push(l); save(linesKey(), myLines); queue('line', lineRow(l));
   var warn = (q.upc && it.upc && q.upc !== it.upc) ? ' This carton has ' + q.upc + ' pieces; the item list says ' + it.upc + '. Tell the count lead.' : '';
   if(expiry){ var days = (new Date(expiry) - new Date(t.count_date)) / 86400000; if(days <= 30) warn += ' Expiry within 30 days (' + expiry + '): keep it aside and report it.'; }
-  alertMsg('scanMsg', 'Added ' + it.code + ': ' + (q.pack === 'C' ? q.cartons + ' carton(s) x ' + q.upc + (q.loose ? ' + ' + q.loose : '') + ' = ' : '') + q.total.toLocaleString() + ' pieces.' + warn, !warn);
+  alertMsg('scanMsg', 'Added ' + (l.cond === 'D' ? 'DAMAGED (' + (l.reason || 'no reason') + ') ' : '') + it.code + ': ' + (q.pack === 'C' ? q.cartons + ' carton(s) x ' + q.upc + (q.loose ? ' + ' + q.loose : '') + ' = ' : '') + q.total.toLocaleString() + ' pieces.' + warn, !warn);
   renderLines(); $('scan').value = ''; focusScan();
 }
 function lineRow(l){
   var t = curTake();
-  return {client_id:l.cid, stock_take_id:t.id, company:t.company, location:t.location, team:S.team || null, counter_name:me.name, user_id:me.id,
+  var row = {client_id:l.cid, stock_take_id:t.id, company:t.company, location:t.location, team:S.team || null, counter_name:me.name, user_id:me.id,
     item_code:l.code, description:l.desc, cartons:l.cartons, loose:l.loose, units_per_carton:l.upc || null, total_units:l.total,
     expiry:l.expiry || null, lot:l.lot || null, bin:l.bin || null, scanned_at:l.ts, deleted:!!l.deleted, pack:l.pack || null};
+  if(l.cond === 'D'){ row.cond = 'D'; row.damage_reason = l.reason || null; }   // only damaged lines carry the new columns
+  return row;
 }
 function renderLines(){
-  var live = myLines.filter(function(l){ return !l.deleted; }), units = live.reduce(function(a, l){ return a + (l.total || 0); }, 0);
-  $('stLines').textContent = live.length; $('stUnits').textContent = units.toLocaleString(); $('stUnknown').textContent = myUnk.length;
+  var live = myLines.filter(function(l){ return !l.deleted; }), units = live.reduce(function(a, l){ return a + (l.cond === 'D' ? 0 : (l.total || 0)); }, 0), dmgUnits = live.reduce(function(a, l){ return a + (l.cond === 'D' ? (l.total || 0) : 0); }, 0);
+  $('stLines').textContent = live.length; $('stUnits').textContent = units.toLocaleString() + (dmgUnits ? ' (+' + dmgUnits.toLocaleString() + ' damaged)' : ''); $('stUnknown').textContent = myUnk.length;
   $('lineCount').textContent = '(' + live.length + ')';
   $('lineBody').innerHTML = live.slice().reverse().map(function(l){
-    return '<tr><td>' + esc(l.code) + '</td><td>' + esc(l.desc) + '</td><td>' + esc(l.bin) + '</td><td>' + (l.pack === 'C' ? 'Carton' : 'Item') + '</td><td class="n">' + (l.cartons || '') + '</td><td class="n">' + (l.pack === 'C' ? l.upc : '') + '</td><td class="n">' + (l.loose || '') +
+    return '<tr' + (l.cond === 'D' ? ' style="background:#fdecea"' : '') + '><td>' + esc(l.code) + '</td><td>' + esc(l.desc) + '</td><td>' + esc(l.bin) + '</td><td>' + (l.pack === 'C' ? 'Carton' : 'Item') + (l.cond === 'D' ? ' <span class="tag" style="background:#c62828;color:#fff">DAMAGED</span>' + (l.reason ? '<br><span class="mini">' + esc(l.reason) + '</span>' : '') : '') + '</td><td class="n">' + (l.cartons || '') + '</td><td class="n">' + (l.pack === 'C' ? l.upc : '') + '</td><td class="n">' + (l.loose || '') +
       '</td><td class="n"><b>' + (l.total == null ? '?' : l.total.toLocaleString()) + '</b></td><td>' + esc(l.t.slice(0, 5)) + '</td><td><button class="sec small" data-del="' + l.id + '" type="button">Delete</button></td></tr>';
   }).join('') || '<tr><td colspan="10" class="small">Nothing counted yet.</td></tr>';
   $('unkCount').textContent = '(' + myUnk.length + ')';
@@ -2007,6 +2021,8 @@ $('teCancel').onclick = function(){ var back = editing && editing.id; editing = 
 $('cTeam').onchange = function(){ S.team = this.value; S.bin = ''; saveSession(); renderCount(); };
 $('cBin').addEventListener('change', function(){ S.bin = norm(this.value); saveSession(); renderCount(); focusScan(); });
 $('cMode').addEventListener('click', function(e){ var b = e.target.closest('button'); if(!b) return; S.mode = b.getAttribute('data-mode'); saveSession(); setSeg('cMode', S.mode); focusScan(); });
+$('cCond').addEventListener('click', function(e){ var b = e.target.closest('button'); if(!b) return; S.cond = b.getAttribute('data-mode'); S.reason = $('cReason').value; saveSession(); setSeg('cCond', S.cond); showCond(); focusScan(); });
+$('cReason').addEventListener('change', function(){ S.reason = $('cReason').value; saveSession(); focusScan(); });
 $('cQuick').onchange = function(){ S.quick = this.checked; saveSession(); focusScan(); };
 $('scan').addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); handleScan(this.value); this.value = ''; } });
 $('btnCam').onclick = startCam;
@@ -2119,5 +2135,5 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(function(){});
 }
 </script>
-<!-- web build 20261031-1920 --></body>
+<!-- web build 20261031-2139 --></body>
 </html>
