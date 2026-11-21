@@ -535,6 +535,7 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
         <div><label>Item barcode(s), separate with |</label><input type="text" id="ifBu"></div>
         <div><label>Carton barcode(s), separate with |</label><input type="text" id="ifBc"></div>
       </div>
+      <p class="small">Changing the item code here renames it everywhere going forward (barcodes move with it); counts already recorded keep the code they were counted under.</p>
       <div class="btns"><button id="ifSave" type="button">Save item</button><button class="sec" id="ifClear" type="button">Clear</button></div>
       <div id="ifMsg"></div>
       <h2 style="margin-top:18px">Load an item list (CSV)</h2>
@@ -1795,7 +1796,7 @@ function loadHistory(){
 function fillItemForm(it){
   editItem = it;
   $('ifTitle').textContent = it ? 'Edit item ' + it.code : 'Add an item';
-  $('ifCode').value = it ? it.code : ''; $('ifCode').disabled = !!it;
+  $('ifCode').value = it ? it.code : ''; $('ifCode').disabled = false;
   $('ifDesc').value = it ? it.desc : ''; $('ifUpc').value = it && it.upc ? it.upc : ''; $('ifUom').value = it ? it.uom || 'UNIT' : 'UNIT';
   $('ifBu').value = it ? split(it.bu).join('|') : ''; $('ifBc').value = it ? split(it.bc).join('|') : '';
   clearMsg('ifMsg');
@@ -1804,7 +1805,8 @@ function saveItem(){
   if(!online()){ alertMsg('ifMsg', 'Saving items needs internet.', false); return; }
   var co = $('iCo').value, code = norm($('ifCode').value), desc = norm($('ifDesc').value);
   if(!code || !desc){ alertMsg('ifMsg', 'Fill the item code and description.', false); return; }
-  if(!editItem && IDX[co].code[code.toUpperCase()]){ alertMsg('ifMsg', 'Item ' + code + ' already exists. Use Edit in the list.', false); return; }
+  var renaming = editItem && code.toUpperCase() !== editItem.code.toUpperCase();
+  if((!editItem || renaming) && IDX[co].code[code.toUpperCase()]){ alertMsg('ifMsg', 'Item ' + code + ' already exists. Use Edit in the list.', false); return; }
   var want = [], drop = [];
   split($('ifBu').value).forEach(function(b){ want.push({barcode:b, company:co, item_code:code, pack:'U', created_by:me.id}); });
   split($('ifBc').value).forEach(function(b){ want.push({barcode:b, company:co, item_code:code, pack:'C', created_by:me.id}); });
@@ -1812,7 +1814,10 @@ function saveItem(){
   if(clash.length){ alertMsg('ifMsg', 'Barcode ' + clash[0].barcode + ' already belongs to ' + IDX[co].bc[clash[0].barcode].it.code + '.', false); return; }
   if(editItem) split(editItem.bu).concat(split(editItem.bc)).forEach(function(b){ if(!want.some(function(w){ return w.barcode === b; })) drop.push(b); });
   alertMsg('ifMsg', 'Saving...', true);
-  sb.from('items').upsert({company:co, code:code, description:desc, units_per_carton:num($('ifUpc').value) || null, c40_uom:$('ifUom').value, updated_at:new Date().toISOString()}, {onConflict:'company,code'}).then(check)
+  var save = renaming
+    ? sb.from('items').update({code:code, description:desc, units_per_carton:num($('ifUpc').value) || null, c40_uom:$('ifUom').value, updated_at:new Date().toISOString()}).eq('company', co).eq('code', editItem.code)
+    : sb.from('items').upsert({company:co, code:code, description:desc, units_per_carton:num($('ifUpc').value) || null, c40_uom:$('ifUom').value, updated_at:new Date().toISOString()}, {onConflict:'company,code'});
+  save.then(check)
     .then(function(){ return drop.length ? sb.from('barcode_links').delete().eq('company', co).in('barcode', drop) : null; }).then(check)
     .then(function(){ return want.length ? sb.from('barcode_links').upsert(want, {onConflict:'company,barcode', ignoreDuplicates:true}) : null; }).then(check)
     .then(function(){ return pullItems(); })
@@ -2135,5 +2140,5 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(function(){});
 }
 </script>
-<!-- web build 20261031-2139 --></body>
+<!-- web build 20261121-0953 --></body>
 </html>
