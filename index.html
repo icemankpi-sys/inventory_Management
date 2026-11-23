@@ -461,7 +461,7 @@ input[type=time]{width:100%;min-height:44px;padding:10px 12px;border:1px solid v
         </div>
         <div class="row hide" id="eC">
           <div><label>Number of cartons</label><input type="number" id="eCtn" min="0" step="1" inputmode="numeric"></div>
-          <div><label>Pieces in one carton</label><input type="number" id="eUpc" min="0" step="1" inputmode="numeric"></div>
+          <div><label>Pieces in one carton <span class="mini" id="eUpcNote"></span></label><input type="number" id="eUpc" min="0" step="1" inputmode="numeric"></div>
           <div><label>Extra loose pieces</label><input type="number" id="eLoose" min="0" step="1" inputmode="numeric"></div>
         </div>
         <div class="total" id="eTotal"></div>
@@ -1609,6 +1609,10 @@ function openEntry(it, mode, gs){
   $('eName').textContent = it.code + '  ' + it.desc;
   $('eInfo').textContent = (it.upc ? it.upc + ' pieces per carton' : 'Pieces per carton not set yet') + (gs ? ' · GS1 label read' : '') + (it.isNew ? ' · new item' : '') + (S && S.cond === 'D' ? ' · DAMAGED (' + (S.reason || 'no reason') + ')' : '');
   $('ePcs').value = 1; $('eCtn').value = 1; $('eUpc').value = it.upc || ''; $('eLoose').value = 0;
+  // 2026-11-23: pieces per carton comes from the item list and cannot be typed over during a count (a carton scan adds cartons x pieces per carton);
+  // only when the item list has no figure yet does the counter type it once. Count Leads change it in the Items tab.
+  $('eUpc').readOnly = !!it.upc; $('eUpc').title = it.upc ? 'From the item list. A Count Lead can change it in the Items tab.' : 'Type how many pieces are in one carton (asked only once).';
+  $('eUpc').style.background = it.upc ? '#eef1f6' : ''; $('eUpcNote').textContent = it.upc ? 'from the item list' : 'not in the item list yet: type it once';
   $('eExp').value = gs ? gs.expiry : ''; $('eLot').value = gs ? gs.lot : '';
   setEntryMode(mode);
   $('entry').style.display = 'block'; clearMsg('scanMsg');
@@ -1629,7 +1633,7 @@ function addFromEntry(){
     var pcs = num($('ePcs').value); if(!pcs){ alertMsg('scanMsg', 'Type the number of pieces.', false); return; }
     q = {pack:'U', cartons:0, upc:it.upc || 0, loose:pcs, total:pcs};
   } else {
-    var ctn = num($('eCtn').value), upc = num($('eUpc').value), loose = num($('eLoose').value);
+    var ctn = num($('eCtn').value), upc = it.upc ? it.upc : num($('eUpc').value), loose = num($('eLoose').value);   // item list figure always wins
     if(!upc){ alertMsg('scanMsg', 'Type how many pieces are in one carton.', false); $('eUpc').focus(); return; }
     if(!ctn && !loose){ alertMsg('scanMsg', 'Type the number of cartons.', false); return; }
     if(!it.upc){ it.upc = upc; saveCache(); queue('upc', {p_company:co, p_code:it.code, p_upc:upc}); }   // first time: save to the item list
@@ -2140,5 +2144,5 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(function(){});
 }
 </script>
-<!-- web build 20261121-0953 --></body>
+<!-- web build 20261123-0928 --></body>
 </html>
